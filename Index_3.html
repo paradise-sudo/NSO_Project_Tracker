@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSO Approval Flow — FY27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --bg:#EEF1F6; --dot:#D7DEE8;
+    --card:#FFFFFF; --ink:#1C2430; --sub:#7A8699; --line:#E2E7EE;
+    --task-bg:#E7ECFF; --task-ink:#4C5FD5;
+    --appr-bg:#FFE9DC; --appr-ink:#D9722E;
+    --gate-bg:#FFE4E0; --gate-ink:#C13E3E;
+    --done:#2F9E5B; --done-bg:#E3F6EA;
+    --pending:#AEB6C2; --pending-bg:#F2F4F7;
+    --active:#4C5FD5;
+    --restart:#D9722E;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(var(--dot) 1px, transparent 1px);
+    background-size:16px 16px;
+    min-height:100vh;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:0 0 90px;}
+  header{
+    position:sticky;top:0;z-index:10;background:rgba(238,241,246,.94);backdrop-filter:blur(6px);
+    padding:18px 18px 0;border-bottom:1px solid var(--dot);
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--task-ink);margin:0 0 4px;font-weight:600;
+  }
+  h1{font-family:'Oswald',sans-serif;font-weight:700;font-size:21px;margin:0 0 12px;}
+
+  .nav-tabs{display:flex;gap:4px;margin-bottom:0;}
+  .nav-tab{
+    flex:1;text-align:center;padding:10px 0;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--sub);background:none;border:none;
+    border-bottom:2px solid transparent;cursor:pointer;
+  }
+  .nav-tab.active{color:var(--ink);border-bottom-color:var(--active);}
+
+  .who-row{display:flex;gap:8px;align-items:center;margin:12px 0;}
+  .who-row span{font-size:12px;color:var(--sub);}
+  .who-row input{
+    flex:1;padding:8px 10px;border-radius:6px;border:1px solid var(--line);
+    background:#fff;font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;
+  }
+
+  .store-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:12px;-ms-overflow-style:none;scrollbar-width:none;}
+  .store-tabs::-webkit-scrollbar{display:none;}
+  .store-tab{
+    flex:none;font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;
+    padding:8px 12px;border-radius:20px;border:1px solid var(--line);background:#fff;color:var(--sub);
+    cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px;
+  }
+  .store-tab .pip{width:6px;height:6px;border-radius:50%;background:var(--pending);}
+  .store-tab.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .store-tab.active .pip{background:#fff;}
+
+  .store-summary{
+    margin:14px 14px 0;padding:12px 14px;background:#fff;border:1px solid var(--line);border-radius:10px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .store-summary .name{font-family:'Oswald',sans-serif;font-weight:600;font-size:15px;}
+  .store-summary .city{font-size:11.5px;color:var(--sub);}
+  .stage-pill{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;padding:5px 10px;border-radius:20px;
+  }
+
+  #flow{padding:16px 14px 0;position:relative;}
+  .rail-line{position:absolute;left:37px;top:16px;bottom:16px;width:2px;background:var(--line);z-index:0;}
+
+  .delay-banner{
+    background:#FDECD8;border:1px solid #F0CBA0;border-radius:10px;padding:11px 13px;margin:14px 0 4px;
+    font-size:12.5px;line-height:1.5;color:#8A4A16;font-weight:500;
+  }
+  .delay-banner > div{margin-bottom:6px;}
+  .delay-banner > div:last-child{margin-bottom:0;}
+
+  .stage-row{position:relative;z-index:1;display:flex;gap:12px;margin-bottom:12px;}
+  .stage-dot{
+    flex:none;width:24px;height:24px;border-radius:50%;background:var(--pending-bg);border:2px solid var(--pending);
+    display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:10px;
+    font-weight:700;color:var(--pending);margin-top:14px;
+  }
+  .stage-dot.done{background:var(--done);border-color:var(--done);color:#fff;}
+  .stage-dot.active{background:var(--active);border-color:var(--active);color:#fff;box-shadow:0 0 0 4px #DDE2FF;}
+  .stage-dot.declined{background:var(--restart);border-color:var(--restart);color:#fff;}
+  .stage-dot.overdue{background:#C13E3E;border-color:#C13E3E;color:#fff;}
+
+  .stage-card{
+    flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    box-shadow:0 1px 2px rgba(20,30,50,.04);cursor:pointer;
+  }
+  .stage-card.pending{opacity:.55;}
+  .stage-card.active{border-color:var(--active);box-shadow:0 0 0 2px #DDE2FF;}
+  .stage-card.skip{opacity:.35;}
+  .stage-card.overdue-card{border-color:#E0A0A0;box-shadow:0 0 0 2px #FBE3E3;}
+
+  .stage-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .stage-badge{
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    padding:3px 7px;border-radius:4px;
+  }
+  .stage-badge.task{background:var(--task-bg);color:var(--task-ink);}
+  .stage-badge.approval{background:var(--appr-bg);color:var(--appr-ink);}
+  .stage-badge.gate{background:var(--gate-bg);color:var(--gate-ink);}
+  .stage-title{font-family:'Oswald',sans-serif;font-weight:600;font-size:14.5px;margin-top:5px;line-height:1.25;}
+  .stage-dur{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--sub);flex:none;white-space:nowrap;}
+  .stage-dur.overdue-dur{color:#C13E3E;font-weight:700;}
+  .stage-owner{font-size:11.5px;color:var(--sub);margin-top:5px;}
+  .stage-status{font-size:11px;font-weight:600;margin-top:6px;}
+  .stage-status.done{color:var(--done);}
+  .stage-status.active{color:var(--active);}
+  .stage-status.pending{color:var(--pending);}
+  .stage-status.declined{color:var(--restart);}
+  .stage-status.overdue{color:#C13E3E;}
+  .restart-note{
+    display:flex;align-items:center;gap:5px;margin:2px 0 8px 36px;font-size:11px;color:var(--restart);
+    font-family:'IBM Plex Mono',monospace;font-weight:600;
+  }
+
+  .sheet-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(15,20,30,.55);z-index:30;
+    align-items:flex-end;justify-content:center;
+  }
+  .sheet-backdrop.open{display:flex;}
+  .sheet{
+    width:100%;max-width:640px;background:#fff;border-radius:16px 16px 0 0;padding:20px 18px 26px;
+    max-height:88vh;overflow-y:auto;
+  }
+  .sheet-badge{margin-bottom:6px;}
+  .sheet h2{font-family:'Oswald',sans-serif;font-size:19px;margin:4px 0 6px;}
+  .sheet .meta{font-size:12.5px;color:var(--sub);margin-bottom:10px;}
+  .sheet .desc{font-size:13.5px;line-height:1.5;color:var(--ink);margin-bottom:10px;}
+  .warn{
+    background:var(--gate-bg);color:#8A2E2E;font-size:12.5px;padding:10px 12px;border-radius:8px;
+    margin-bottom:12px;line-height:1.4;font-weight:500;
+  }
+  .info-box{
+    background:var(--task-bg);color:#333B7A;font-size:12.5px;padding:10px 12px;border-radius:8px;
+    margin-bottom:12px;line-height:1.4;font-weight:500;
+  }
+  .approver-list{margin:10px 0;}
+  .approver{
+    display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);
+    font-size:13.5px;
+  }
+  .approver:last-child{border-bottom:none;}
+  .approver .check{
+    width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;cursor:pointer;
+  }
+  .approver .check.on{background:var(--done);border-color:var(--done);}
+  .approver-name{flex:1;}
+  .approver-stamp{font-size:10.5px;color:var(--sub);font-family:'IBM Plex Mono',monospace;}
+
+  .btn-row{display:flex;gap:10px;margin-top:16px;}
+  .btn{flex:1;padding:12px;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;font-family:'Inter',sans-serif;}
+  .btn.primary{background:var(--ink);color:#fff;}
+  .btn.decline{background:transparent;color:var(--restart);border:1px solid #F0D2BC;}
+  .btn.ghost{background:transparent;color:var(--sub);border:1px solid var(--line);}
+  .field label{
+    display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--sub);margin-bottom:6px;margin-top:12px;
+  }
+  .field textarea, .field input, .field select{
+    width:100%;padding:10px 11px;border-radius:6px;border:1px solid var(--line);font-size:13.5px;font-family:'Inter',sans-serif;background:#fff;
+  }
+  .field textarea{min-height:56px;resize:vertical;}
+  .progress-line{font-size:12px;color:var(--sub);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
+  .log{font-size:11px;color:var(--sub);margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;line-height:1.6;max-height:110px;overflow-y:auto;}
+  .loading{text-align:center;padding:50px;color:var(--sub);font-family:'IBM Plex Mono',monospace;font-size:12.5px;}
+
+  /* Admin view */
+  .admin-wrap{padding:16px 14px 0;}
+  .admin-section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px;}
+  .admin-section h3{font-family:'Oswald',sans-serif;font-size:15px;margin:0 0 3px;}
+  .admin-section .sub{font-size:12px;color:var(--sub);margin-bottom:12px;}
+  .admin-row{
+    display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;
+  }
+  .admin-row:last-child{border-bottom:none;}
+  .admin-row-main{font-weight:600;}
+  .admin-row-sub{font-size:11.5px;color:var(--sub);}
+  .level-badge{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;
+    background:var(--task-bg);color:var(--task-ink);white-space:nowrap;
+  }
+  .remove-x{
+    background:none;border:none;color:var(--sub);font-size:16px;cursor:pointer;padding:2px 6px;flex:none;
+  }
+  .approver-slot-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);}
+  .approver-slot-row:last-child{border-bottom:none;}
+  .approver-slot-row label{margin:0;font-size:12px;color:var(--sub);}
+  .approver-slot-row select{width:auto;flex:1;margin-left:10px;}
+  .empty-note{text-align:center;padding:40px 20px;color:var(--sub);font-size:13px;}
+
+  .login-gate{
+    position:fixed;inset:0;z-index:100;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+    background-image:radial-gradient(var(--dot) 1px, transparent 1px);background-size:16px 16px;
+  }
+  .login-card{
+    width:100%;max-width:400px;background:#fff;border:1px solid var(--line);border-radius:14px;
+    padding:24px 22px;box-shadow:0 8px 30px rgba(20,30,50,.1);
+  }
+  .login-card h2{font-family:'Oswald',sans-serif;font-size:20px;margin:2px 0 10px;}
+  .login-note{font-size:12.5px;color:var(--sub);line-height:1.5;margin-bottom:6px;}
+  .switch-link{
+    background:none;border:none;color:var(--task-ink);font-size:12px;font-weight:600;cursor:pointer;
+    text-decoration:underline;padding:0;
+  }
+</style>
+</head>
+<body>
+<div class="login-gate" id="loginGate">
+  <div class="login-card">
+    <p class="eyebrow">NSO Approval Flow</p>
+    <h2>Sign in to continue</h2>
+    <p class="login-note">Restricted to @paradisefoodcourt.in Google accounts. Data lives in Google Drive and syncs live to everyone with access.</p>
+    <div id="loginErr" class="login-note" style="color:#C13E3E;display:none;"></div>
+    <div class="btn-row"><button class="btn primary" id="googleSignInBtn">Sign in with Google</button></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Live shared board · NSO FY27</p>
+    <h1>NSO Approval Flow</h1>
+    <div class="nav-tabs">
+      <button class="nav-tab" id="navTracker">Tracker</button>
+      <button class="nav-tab" id="navAdmin">Admin</button>
+    </div>
+    <div class="who-row">
+      <span id="whoDisplay">Signed in as —</span>
+      <button class="switch-link" id="switchUserBtn">switch</button>
+    </div>
+    <div class="store-tabs" id="storeTabs"></div>
+  </header>
+
+  <div class="store-summary" id="storeSummary"></div>
+  <div id="flow" class="loading">Loading board…</div>
+  <div id="adminView" class="admin-wrap" style="display:none;"></div>
+</div>
+
+<div class="sheet-backdrop" id="sheetBackdrop">
+  <div class="sheet" id="sheetBody"></div>
+</div>
+
+<script>
+const STORAGE_KEY = 'nso-board-v2'; // unused now, kept as a label reference only
+
+const GOOGLE_CLIENT_ID = '96188844887-m2dmbmtl8hgq5pcuove1jlpsid3rjfne.apps.googleusercontent.com';
+const ALLOWED_DOMAIN = 'paradisefoodcourt.in';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile';
+const DRIVE_DATA_FILE_NAME = 'nso-tracker-data.json';
+const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
+const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
+
+let accessToken = null;
+let driveFileId = null;
+let tokenClient = null;
+
+const FORMATS = {
+  Omni: { label:'Omni (Dine-in)', sizeText:'1,200–1,300 sqft' },
+  CloudKitchen: { label:'Cloud Kitchen', sizeText:'650 sqft' },
+};
+const LEVELS = [
+  {rank:1, label:'Team Member'},
+  {rank:2, label:'Manager'},
+  {rank:3, label:'Senior Manager'},
+  {rank:4, label:'Director'},
+  {rank:5, label:'Leadership (MD/CFO/CXO)'},
+];
+let currentUser = null;
+
+const STAGE4_REQUIRED_LEVEL = 4; // kept for reference/labeling only — panel eligibility is now the manual Approver tag
+
+const STAGES = [
+  {id:1, num:'01', title:'Market & Area Identification', type:'task', owner:'Ayush + Abhik + Meenakshi + Rajeesh + Jimmy', duration:'1–3 Months', slaDays:90,
+   desc:'Internal SiteIQ + GeoIQ analysis scores locations across 6 lenses. Final Rank = Internal Score (35%) + Swiggy/Zomato Volume (35%) + Share Gap (30%). Areas finalised before any scouting begins.'},
+  {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', slaDays:14,
+   desc:'Physical scouting within identified markets.',
+   warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
+  {id:3, num:'03', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', slaDays:5,
+   desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
+  {id:4, num:'04', title:'5-Way Site Visit + Sign-off', type:'approval', owner:'5-way panel (Director level+)', duration:'10-Day Window', slaDays:10,
+   desc:'All 5 panel members must physically visit the site. P&L reviewed on-site. No partial approvals — all 5 must sign off within the 10-day window.',
+   reworkTo:2},
+  {id:5, num:'05', title:'Feasibility + Service Req + CAPEX', type:'task', owner:'Ayush + Renuka + Sandeep', duration:'1 Week', slaDays:7,
+   desc:'Detailed feasibility study, service requirements mapped, final CAPEX estimated and approved. Runs in parallel with electrical load confirmation.'},
+  {id:6, num:'06', title:'Electrical Load Confirmation', type:'gate', owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', slaDays:14, bangaloreOnly:true,
+   desc:'Landlord must confirm electrical load in writing before the LOI can be signed.',
+   warning:'HARD GATE — Bangalore specific. LOI cannot be signed until load is confirmed in writing. New buildings strictly avoided. No exceptions.',
+   reworkTo:2},
+  {id:7, num:'07', title:'LOI Signing + Rent Structure', type:'task', owner:'Ayush + Finance', duration:'Post load confirm', slaDays:14,
+   desc:'LOI / term sheet signed post load confirmation. Legal (Gunjan) initiates Agreement documentation in parallel — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution.'},
+  {id:8, num:'08', title:'Free Fit-Out → Store Opening', type:'task', owner:'All Workstream Owners', duration:'60 Days', slaDays:60,
+   desc:'60-day free fit-out. Parallel workstreams: People (Anand), Tech (Rajeesh), Supply Chain (Venkatesh), Marketing Launch (Meenakshi), Legal (Gunjan).'},
+];
+
+let board = null;
+let activeStore = null;
+let currentView = 'tracker';
+
+function uid(prefix){ return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function defaultBoard(){
+  const seedSites = [
+    {id:'BLR-1', name:'Bangalore — Site 1', city:'BLR', format:'Omni'},
+    {id:'BLR-2', name:'Bangalore — Site 2', city:'BLR', format:'Omni'},
+    {id:'BLR-3', name:'Bangalore — Site 3', city:'BLR', format:'Omni'},
+    {id:'BLR-4', name:'Bangalore — Site 4', city:'BLR', format:'Omni'},
+    {id:'CHN-1', name:'Chennai — Site 1', city:'CHN', format:'Omni'},
+  ];
+  const seedStakeholders = [
+    {id:'sh_abhik', name:'Abhik Mitra', department:'MD Office', level:5, isApprover:true},
+    {id:'sh_jimmy', name:'Jimmy', department:'Finance (CFO)', level:5, isApprover:true},
+    {id:'sh_meenakshi', name:'Meenakshi', department:'Marketing', level:5, isApprover:true},
+    {id:'sh_rajeesh', name:'Rajeesh', department:'Technology', level:5, isApprover:true},
+    {id:'sh_ayush', name:'Ayush + Rajshekhar', department:'BD & Ops / Sales', level:4, isApprover:true},
+  ];
+  const siteData = {};
+  seedSites.forEach(site=>{
+    siteData[site.id] = makeSiteData(site);
+  });
+  return {
+    sites: seedSites,
+    stakeholders: seedStakeholders,
+    approvalPanel: seedStakeholders.map(s=>s.id),
+    siteData,
+    users: [],
+  };
+}
+
+function makeSiteData(site){
+  const stageData = {};
+  STAGES.forEach(st=>{
+    const skip = st.bangaloreOnly && site.city !== 'BLR';
+    stageData[st.id] = { status: skip ? 'skip' : (st.id===1 ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
+      startedAt: (st.id===1 && !skip) ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0 };
+    if(st.id === 3){
+      stageData[st.id].financials = { capex:'', m1Revenue:'', monthlyGrowthPct:'', y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+    }
+  });
+  return { current: 1, stageData, log: [], signingDate: null };
+}
+
+async function findOrCreateDriveFile(){
+  const q = encodeURIComponent(`name='${DRIVE_DATA_FILE_NAME}' and trashed=false`);
+  const listRes = await fetch(`${DRIVE_FILES_URL}?q=${q}&spaces=drive&fields=files(id,name)`, {
+    headers: { Authorization: 'Bearer ' + accessToken }
+  });
+  const listData = await listRes.json();
+  if(listData.files && listData.files.length){
+    driveFileId = listData.files[0].id;
+    return;
+  }
+  const metadata = { name: DRIVE_DATA_FILE_NAME, mimeType: 'application/json' };
+  const boundary = 'nso_boundary_314159';
+  const body = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(defaultBoard())}\r\n--${boundary}--`;
+  const createRes = await fetch(`${DRIVE_UPLOAD_URL}?uploadType=multipart&fields=id`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body
+  });
+  const createData = await createRes.json();
+  driveFileId = createData.id;
+}
+
+async function loadBoard(){
+  try{
+    if(!driveFileId) await findOrCreateDriveFile();
+    const res = await fetch(`${DRIVE_FILES_URL}/${driveFileId}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    const text = await res.text();
+    board = text ? JSON.parse(text) : defaultBoard();
+  }catch(e){
+    console.error('Drive load failed', e);
+    if(!board) board = defaultBoard();
+  }
+  if(!board.users) board.users = [];
+  if(!activeStore && board.sites.length) activeStore = board.sites[0].id;
+  render();
+}
+async function saveBoard(){
+  try{
+    if(!driveFileId) await findOrCreateDriveFile();
+    await fetch(`${DRIVE_UPLOAD_URL}/${driveFileId}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(board)
+    });
+  }catch(e){ console.error('Drive save failed', e); }
+}
+function getWho(){ return (currentUser && currentUser.name) || 'someone'; }
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function timeAgo(ts){
+  if(!ts) return '';
+  const s = Math.round((Date.now()-ts)/1000);
+  if(s<60) return 'just now';
+  const m = Math.round(s/60); if(m<60) return m+'m ago';
+  const h = Math.round(m/60); if(h<24) return h+'h ago';
+  return Math.round(h/24)+'d ago';
+}
+function fmtDate(ts){
+  if(!ts) return null;
+  return new Date(ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+}
+function fmtINR(n){
+  if(!isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  let s;
+  if(abs >= 10000000) s = (n/10000000).toFixed(2)+'Cr';
+  else if(abs >= 100000) s = (n/100000).toFixed(2)+'L';
+  else s = Math.round(n).toLocaleString('en-IN');
+  return '₹'+s;
+}
+function levelLabel(rank){ const l = LEVELS.find(x=>x.rank===rank); return l ? l.label : 'Level '+rank; }
+
+function getSite(id){ return board.sites.find(s=>s.id===id); }
+function storeState(id){ return board.siteData[id]; }
+
+function calcProjection(f){
+  const capex = parseFloat(f.capex) || 0;
+  const cogsPct = parseFloat(f.cogsPct) || 0;
+  const fixedOpex = parseFloat(f.fixedOpex) || 0;
+  const monthlyGrowthPct = parseFloat(f.monthlyGrowthPct) || 0;
+  const y2GrowthPct = parseFloat(f.y2GrowthPct) || 0;
+  const y3GrowthPct = parseFloat(f.y3GrowthPct) || 0;
+  let revenue = parseFloat(f.m1Revenue) || 0;
+  let cumulative = -capex;
+  let paybackMonth = null;
+  let y = [ {rev:0, ebitda:0}, {rev:0, ebitda:0}, {rev:0, ebitda:0} ];
+  for(let m=1; m<=36; m++){
+    if(m>1){
+      if(m<=12) revenue = revenue * (1 + monthlyGrowthPct/100);
+      else if(m===13) revenue = revenue * (1 + y2GrowthPct/100);
+      else if(m===25) revenue = revenue * (1 + y3GrowthPct/100);
+    }
+    const cogs = revenue * cogsPct/100;
+    const ebitda = revenue - cogs - fixedOpex;
+    cumulative += ebitda;
+    if(paybackMonth===null && cumulative>=0 && capex>0) paybackMonth = m;
+    const yi = m<=12?0:(m<=24?1:2);
+    y[yi].rev += revenue; y[yi].ebitda += ebitda;
+  }
+  const totalEBITDA = y[0].ebitda + y[1].ebitda + y[2].ebitda;
+  const roi3yr = capex>0 ? ((totalEBITDA - capex)/capex*100) : 0;
+  return { paybackMonth, y, totalEBITDA, roi3yr };
+}
+
+function recompute(id){
+  const s = storeState(id);
+  let current = 1;
+  for(const st of STAGES){
+    const d = s.stageData[st.id];
+    if(d.status === 'done' || d.status === 'skip') continue;
+    current = st.id;
+    break;
+  }
+  s.current = current;
+  STAGES.forEach(st=>{
+    const d = s.stageData[st.id];
+    if(d.status === 'pending' && st.id === current){
+      d.status = 'active';
+      if(!d.startedAt) d.startedAt = Date.now();
+    }
+    if(d.status === 'active' && st.id !== current) d.status = 'pending';
+  });
+}
+
+function stageTiming(st, d){
+  if(!d.startedAt || d.status==='done' || d.status==='skip') return null;
+  const elapsedDays = Math.floor((Date.now() - d.startedAt) / 86400000);
+  const overdueDays = elapsedDays - st.slaDays;
+  return { elapsedDays, overdueDays, isOverdue: overdueDays > 0 };
+}
+
+// Downstream dates computed off the actual term-sheet (Stage 07) signing date
+function computeDownstreamDates(s){
+  if(!s.signingDate) return null;
+  const day = 86400000;
+  const fitOutEnd = s.signingDate + STAGES.find(x=>x.id===8).slaDays * day;
+  const rceoHireBy = fitOutEnd - 60*day;
+  const teamMemberHireBy = fitOutEnd - 30*day;
+  return { fitOutEnd, rceoHireBy, teamMemberHireBy };
+}
+
+function render(){
+  document.getElementById('navTracker').classList.toggle('active', currentView==='tracker');
+  document.getElementById('navAdmin').classList.toggle('active', currentView==='admin');
+  document.getElementById('storeTabs').style.display = currentView==='tracker' ? 'flex' : 'none';
+  document.getElementById('storeSummary').style.display = currentView==='tracker' ? 'flex' : 'none';
+  document.getElementById('flow').style.display = currentView==='tracker' ? 'block' : 'none';
+  document.getElementById('adminView').style.display = currentView==='admin' ? 'block' : 'none';
+
+  renderTabs();
+  if(currentView === 'tracker'){
+    renderSummary();
+    renderFlow();
+  } else {
+    renderAdmin();
+  }
+}
+
+function renderTabs(){
+  const el = document.getElementById('storeTabs');
+  if(board.sites.length === 0){ el.innerHTML=''; return; }
+  el.innerHTML = board.sites.map(site=>{
+    const st = storeState(site.id);
+    const curStage = STAGES.find(x=>x.id===st.current);
+    const curD = st.stageData[st.current];
+    const curT = curStage ? stageTiming(curStage, curD) : null;
+    let pipColor = 'var(--active)';
+    if(curStage && curStage.type==='approval') pipColor = 'var(--appr-ink)';
+    if(curStage && curStage.type==='gate') pipColor = 'var(--gate-ink)';
+    if(st.current===8 && st.stageData[8].status==='done') pipColor = 'var(--done)';
+    if(curT && curT.isOverdue) pipColor = '#C13E3E';
+    return `<button class="store-tab ${site.id===activeStore?'active':''}" data-s="${site.id}">
+      <span class="pip" style="background:${site.id===activeStore?'#fff':pipColor}"></span>${escapeHtml(site.name.replace(' — ',' · '))}
+    </button>`;
+  }).join('');
+  el.querySelectorAll('.store-tab').forEach(b=>{
+    b.onclick = ()=>{ activeStore = b.dataset.s; render(); };
+  });
+}
+
+function renderSummary(){
+  if(!activeStore || !getSite(activeStore)){ document.getElementById('storeSummary').innerHTML=''; return; }
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  const curStage = STAGES.find(x=>x.id===s.current);
+  const done8 = s.stageData[8].status === 'done';
+  const el = document.getElementById('storeSummary');
+  let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `Stage ${curStage.num} — ${curStage.title}` : '';
+  if(done8){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Store opened'; }
+  else if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
+  else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
+  const dates = computeDownstreamDates(s);
+  const targetText = dates ? `target opening ${fmtDate(dates.fitOutEnd)}` : 'target TBD — pending term sheet';
+  el.innerHTML = `
+    <div>
+      <div class="name">${escapeHtml(site.name)}</div>
+      <div class="city">${escapeHtml(FORMATS[site.format].label)} · ${site.city === 'BLR' ? 'Bangalore' : 'Chennai'} · ${targetText}</div>
+    </div>
+    <div class="stage-pill" style="background:${pillBg};color:${pillInk};">${label}</div>
+  `;
+}
+
+function renderFlow(){
+  const el = document.getElementById('flow');
+  if(!activeStore || board.sites.length === 0){
+    el.className = '';
+    el.innerHTML = `<div class="empty-note">No sites yet. Go to <b>Admin</b> to add the first site — its tracker starts the moment you add it.</div>`;
+    return;
+  }
+  recompute(activeStore);
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  el.className = '';
+  let html = '';
+
+  const overdueStages = STAGES.filter(st=>{
+    const d = s.stageData[st.id];
+    const t = stageTiming(st, d);
+    return t && t.isOverdue;
+  });
+  if(overdueStages.length){
+    html += `<div class="delay-banner">` + overdueStages.map(st=>{
+      const d = s.stageData[st.id];
+      const t = stageTiming(st, d);
+      const reasonBit = d.delayReason
+        ? `Reason logged: "${escapeHtml(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}`
+        : `No reason logged yet — tap the stage to log one.`;
+      return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${st.slaDays}d SLA. ${reasonBit}</div>`;
+    }).join('') + `</div>`;
+  }
+
+  html += '<div class="rail-line"></div>';
+  STAGES.forEach(st=>{
+    const d = s.stageData[st.id];
+    if(d.status === 'skip'){
+      html += `<div class="stage-row"><div class="stage-dot">–</div>
+        <div class="stage-card skip"><div class="stage-title">${st.num} · ${escapeHtml(st.title)}</div>
+        <div class="stage-owner">Not applicable — Chennai</div></div></div>`;
+      return;
+    }
+    const t = stageTiming(st, d);
+    let dotCls = d.status;
+    if(t && t.isOverdue) dotCls = 'overdue';
+    let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : (t && t.isOverdue ? '!' : st.num));
+    let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back'}[d.status];
+    let slaBit = `SLA ${st.slaDays}d`;
+    if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over SLA` : `Day ${t.elapsedDays} of ${st.slaDays}d SLA`;
+    let ownerText = st.owner;
+    if(st.id === 2) ownerText = st.owner + ` · target ${FORMATS[site.format].sizeText}`;
+    html += `<div class="stage-row" data-stage="${st.id}">
+      <div class="stage-dot ${dotCls}">${dotContent}</div>
+      <div class="stage-card ${d.status} ${t&&t.isOverdue?'overdue-card':''}">
+        <div class="stage-top">
+          <div>
+            <span class="stage-badge ${st.type}">${st.type}</span>
+            <div class="stage-title">${st.num} · ${escapeHtml(st.title)}</div>
+          </div>
+          <div class="stage-dur ${t&&t.isOverdue?'overdue-dur':''}">${slaBit}</div>
+        </div>
+        <div class="stage-owner">${escapeHtml(ownerText)}</div>
+        <div class="stage-status ${t&&t.isOverdue?'overdue':d.status}">${statusLabel}${d.updatedBy ? ' · '+escapeHtml(d.updatedBy)+' · '+timeAgo(d.updatedAt) : ''}</div>
+      </div>
+    </div>`;
+    if(d.status === 'declined' && st.reworkTo){
+      html += `<div class="restart-note">↩ restarted to Stage ${STAGES.find(x=>x.id===st.reworkTo).num} — ${escapeHtml(STAGES.find(x=>x.id===st.reworkTo).title)}</div>`;
+    }
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('.stage-row[data-stage]').forEach(row=>{
+    row.onclick = ()=> openSheet(parseInt(row.dataset.stage));
+  });
+}
+
+function openSheet(stageId){
+  const st = STAGES.find(x=>x.id===stageId);
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  const d = s.stageData[stageId];
+  const backdrop = document.getElementById('sheetBackdrop');
+  const body = document.getElementById('sheetBody');
+
+  let inner = `
+    <span class="stage-badge ${st.type} sheet-badge">${st.type}</span>
+    <h2>${st.num} · ${escapeHtml(st.title)}</h2>
+    <div class="meta">${escapeHtml(st.owner)} · ${st.duration}</div>
+    <div class="desc">${escapeHtml(st.desc)}${st.id===2 ? ` Preferred size for this site: <b>${FORMATS[site.format].sizeText}</b> (${FORMATS[site.format].label}).` : ''}</div>
+  `;
+  if(st.warning) inner += `<div class="warn">⚠ ${escapeHtml(st.warning)}</div>`;
+
+  if(st.id === 8){
+    const dates = computeDownstreamDates(s);
+    if(dates){
+      inner += `<div class="info-box">Auto-calculated from term sheet signing (${fmtDate(s.signingDate)}):<br>
+        Target opening: <b>${fmtDate(dates.fitOutEnd)}</b><br>
+        RCEO &amp; KR hired by: <b>${fmtDate(dates.rceoHireBy)}</b><br>
+        Team Member hired by: <b>${fmtDate(dates.teamMemberHireBy)}</b></div>`;
+    } else {
+      inner += `<div class="info-box">Dates will auto-calculate once Stage 07 (term sheet) is signed.</div>`;
+    }
+  }
+
+  const t = stageTiming(st, d);
+  if(t){
+    inner += `<div class="meta" style="margin-top:-6px;">Day ${t.elapsedDays} of ${st.slaDays}d SLA${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
+  }
+  if(t && t.isOverdue){
+    inner += `<div class="warn">⚠ This stage is ${t.overdueDays} day(s) past its SLA.
+      ${d.delayReason ? `Reason logged: "${escapeHtml(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}, ${timeAgo(d.delayLoggedAt)}` : ''}
+    </div>`;
+    inner += `<div class="field"><label>${d.delayReason?'Update delay reason':'Log reason for delay'}</label>
+      <textarea id="delayReasonField" placeholder="e.g. landlord unresponsive, awaiting legal docs...">${escapeHtml(d.delayReason||'')}</textarea></div>
+      <div class="btn-row"><button class="btn decline" id="logDelayBtn">Log delay</button></div>`;
+  }
+
+  if(st.type === 'approval'){
+    d.approvals = d.approvals || {};
+    const panel = board.approvalPanel.map(id=>board.stakeholders.find(x=>x.id===id)).filter(Boolean);
+    const approvedCount = panel.filter(p=>d.approvals[p.id]).length;
+    if(panel.length < 5){
+      inner += `<div class="warn">⚠ Only ${panel.length}/5 seats filled on the approval panel. Assign all 5 in Admin.</div>`;
+    }
+    inner += `<div class="approver-list">` + panel.map(p=>{
+      const rec = d.approvals[p.id];
+      return `<div class="approver">
+        <div class="approver-name">${escapeHtml(p.name)} <span class="level-badge">${levelLabel(p.level)}</span>
+          ${rec ? `<div class="approver-stamp">✓ confirmed by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}</div>
+        <div class="check ${rec?'on':''}" data-approver="${p.id}">${rec?'✓':''}</div>
+      </div>`;
+    }).join('') + `</div>
+    <div class="progress-line">${approvedCount} / ${panel.length} signed off${d.status==='done' ? ' — all approved' : ''}</div>`;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn decline" id="declineBtn">Decline — send back</button>
+        <button class="btn primary" id="closeBtn">Close</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  } else if(st.id === 3){
+    d.financials = d.financials || { capex:'', m1Revenue:'', monthlyGrowthPct:'', y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+    const f = d.financials;
+    inner += `
+      <div class="field"><label>CAPEX — one-time investment (₹)</label><input id="fx_capex" type="number" value="${f.capex}" placeholder="e.g. 6000000"></div>
+      <div class="field"><label>Month 1 revenue (₹)</label><input id="fx_m1" type="number" value="${f.m1Revenue}" placeholder="e.g. 800000"></div>
+      <div class="field"><label>Monthly growth, months 2–12 (%)</label><input id="fx_mg" type="number" value="${f.monthlyGrowthPct}" placeholder="e.g. 6"></div>
+      <div class="field"><label>Year 2 step-up (%)</label><input id="fx_y2" type="number" value="${f.y2GrowthPct}" placeholder="e.g. 15"></div>
+      <div class="field"><label>Year 3 step-up (%)</label><input id="fx_y3" type="number" value="${f.y3GrowthPct}" placeholder="e.g. 12"></div>
+      <div class="field"><label>COGS (% of revenue)</label><input id="fx_cogs" type="number" value="${f.cogsPct}" placeholder="e.g. 32"></div>
+      <div class="field"><label>Fixed monthly opex — rent, staff, utilities (₹)</label><input id="fx_opex" type="number" value="${f.fixedOpex}" placeholder="e.g. 450000"></div>
+      <div class="btn-row"><button class="btn ghost" id="calcBtn">Calculate</button></div>
+      <div id="fxResults"></div>
+      <div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>
+    `;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn ghost" id="saveNotesBtn">Save only</button>
+        <button class="btn primary" id="completeBtn">Save &amp; mark complete</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  } else if(st.type === 'gate'){
+    inner += `<div class="progress-line">${d.status==='done' ? 'Confirmed by landlord' : 'Awaiting written confirmation'}</div>`;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn decline" id="declineBtn">Not confirmed — send back</button>
+        <button class="btn primary" id="confirmBtn">Confirm load received</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  } else {
+    inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn ghost" id="saveNotesBtn">Save notes</button>
+        <button class="btn primary" id="completeBtn">Mark complete</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  }
+
+  if(s.log.filter(l=>l.stageId===stageId).length){
+    inner += `<div class="log">` + s.log.filter(l=>l.stageId===stageId).slice(-5).reverse().map(l=>`${escapeHtml(l.text)} — ${timeAgo(l.at)}`).join('<br>') + `</div>`;
+  }
+
+  body.innerHTML = inner;
+  backdrop.classList.add('open');
+  wireSheetActions(st, s, d);
+  if(st.id === 3) renderFxResults(d.financials);
+}
+
+function readFxInputs(){
+  return {
+    capex: document.getElementById('fx_capex').value,
+    m1Revenue: document.getElementById('fx_m1').value,
+    monthlyGrowthPct: document.getElementById('fx_mg').value,
+    y2GrowthPct: document.getElementById('fx_y2').value,
+    y3GrowthPct: document.getElementById('fx_y3').value,
+    cogsPct: document.getElementById('fx_cogs').value,
+    fixedOpex: document.getElementById('fx_opex').value,
+  };
+}
+function renderFxResults(f){
+  const el = document.getElementById('fxResults');
+  if(!el) return;
+  if(!(f.capex && f.m1Revenue)){
+    el.innerHTML = `<div class="progress-line">Fill in CAPEX and Month 1 revenue, then Calculate.</div>`;
+    return;
+  }
+  const r = calcProjection(f);
+  el.innerHTML = `
+    <div class="progress-line" style="font-size:13px;font-weight:700;color:var(--ink);margin-top:14px;">
+      Payback: ${r.paybackMonth ? r.paybackMonth+' months' : 'beyond 36 months'} · 3-Yr ROI: ${r.roi3yr.toFixed(0)}%
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;">
+      <tr style="color:var(--sub);text-align:left;"><th style="padding:4px 0;">Year</th><th>Revenue</th><th>EBITDA</th></tr>
+      ${r.y.map((yy,i)=>`<tr style="border-top:1px solid var(--line);">
+        <td style="padding:5px 0;font-weight:600;">Y${i+1}</td><td>${fmtINR(yy.rev)}</td><td>${fmtINR(yy.ebitda)}</td>
+      </tr>`).join('')}
+      <tr style="border-top:1px solid var(--line);font-weight:700;">
+        <td style="padding:5px 0;">Total</td><td>${fmtINR(r.y[0].rev+r.y[1].rev+r.y[2].rev)}</td><td>${fmtINR(r.totalEBITDA)}</td>
+      </tr>
+    </table>
+  `;
+}
+
+function wireSheetActions(st, s, d){
+  const closeBtn = document.getElementById('closeBtn');
+  if(closeBtn) closeBtn.onclick = closeSheet;
+
+  const calcBtn = document.getElementById('calcBtn');
+  if(calcBtn) calcBtn.onclick = ()=> renderFxResults(readFxInputs());
+
+  const logDelayBtn = document.getElementById('logDelayBtn');
+  if(logDelayBtn) logDelayBtn.onclick = async ()=>{
+    const who = getWho();
+    d.delayReason = document.getElementById('delayReasonField').value.trim();
+    d.delayLoggedBy = who; d.delayLoggedAt = Date.now();
+    s.log.push({stageId:st.id, text:`Delay logged by ${who}: "${d.delayReason}"`, at: Date.now()});
+    await saveBoard(); render(); openSheet(st.id);
+  };
+
+  document.querySelectorAll('[data-approver]').forEach(chip=>{
+    chip.onclick = async ()=>{
+      const who = getWho();
+      const pid = chip.dataset.approver;
+      d.approvals = d.approvals || {};
+      if(d.approvals[pid]) delete d.approvals[pid];
+      else d.approvals[pid] = { by: who, at: Date.now() };
+      const panel = board.approvalPanel;
+      const allApproved = panel.length===5 && panel.every(pid2=>d.approvals[pid2]);
+      if(allApproved){
+        d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
+        s.log.push({stageId:st.id, text:`All 5 signed off, confirmed by ${who}`, at: Date.now()});
+      }
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+
+  const declineBtn = document.getElementById('declineBtn');
+  if(declineBtn) declineBtn.onclick = async ()=>{
+    const who = getWho();
+    d.status = 'declined'; d.approvals = {}; d.updatedBy = who; d.updatedAt = Date.now();
+    d.delayReason=''; d.delayLoggedBy=''; d.delayLoggedAt=0;
+    const target = STAGES.find(x=>x.id===st.reworkTo);
+    if(target){
+      s.stageData[target.id].status = 'active';
+      s.stageData[target.id].startedAt = Date.now();
+      s.stageData[target.id].delayReason=''; s.stageData[target.id].delayLoggedBy=''; s.stageData[target.id].delayLoggedAt=0;
+      for(const later of STAGES){
+        if(later.id > target.id && later.id < st.id){
+          s.stageData[later.id].status = 'pending';
+          s.stageData[later.id].startedAt = null;
+        }
+      }
+      s.stageData[st.id].status = 'declined';
+    }
+    s.log.push({stageId:st.id, text:`Declined by ${who}, restarted to Stage ${target?target.num:''}`, at: Date.now()});
+    await saveBoard(); render(); closeSheet();
+  };
+
+  const confirmBtn = document.getElementById('confirmBtn');
+  if(confirmBtn) confirmBtn.onclick = async ()=>{
+    const who = getWho();
+    d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
+    s.log.push({stageId:st.id, text:`Load confirmed, logged by ${who}`, at: Date.now()});
+    await saveBoard(); render(); closeSheet();
+  };
+
+  const completeBtn = document.getElementById('completeBtn');
+  if(completeBtn) completeBtn.onclick = async ()=>{
+    const who = getWho();
+    const notes = document.getElementById('notesField');
+    if(notes) d.notes = notes.value.trim();
+    if(st.id === 3) d.financials = readFxInputs();
+    d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
+    if(st.id === 7) s.signingDate = Date.now();
+    s.log.push({stageId:st.id, text:`Marked complete by ${who}`, at: Date.now()});
+    await saveBoard(); render(); closeSheet();
+  };
+
+  const saveNotesBtn = document.getElementById('saveNotesBtn');
+  if(saveNotesBtn) saveNotesBtn.onclick = async ()=>{
+    const who = getWho();
+    d.notes = document.getElementById('notesField').value.trim();
+    if(st.id === 3) d.financials = readFxInputs();
+    d.updatedBy = who; d.updatedAt = Date.now();
+    await saveBoard(); render(); closeSheet();
+  };
+}
+function closeSheet(){ document.getElementById('sheetBackdrop').classList.remove('open'); }
+document.getElementById('sheetBackdrop').onclick = (e)=>{ if(e.target.id==='sheetBackdrop') closeSheet(); };
+
+// ---------- Admin view ----------
+function renderAdmin(){
+  const el = document.getElementById('adminView');
+  el.innerHTML = `
+    <div class="admin-section">
+      <h3>Sites</h3>
+      <div class="sub">Adding a site here starts its NSO tracker from Stage 01.</div>
+      <div class="field"><label>Site name</label><input id="admSiteName" placeholder="e.g. Bangalore — Site 5"></div>
+      <div class="field"><label>City</label><select id="admSiteCity"><option value="BLR">Bangalore</option><option value="CHN">Chennai</option></select></div>
+      <div class="field"><label>Format</label><select id="admSiteFormat">
+        <option value="Omni">Omni (Dine-in) — 1,200–1,300 sqft</option>
+        <option value="CloudKitchen">Cloud Kitchen — 650 sqft</option>
+      </select></div>
+      <div class="btn-row"><button class="btn primary" id="admAddSite">Add site</button></div>
+      ${board.sites.map(site=>`
+        <div class="admin-row">
+          <div><div class="admin-row-main">${escapeHtml(site.name)}</div>
+            <div class="admin-row-sub">${site.city==='BLR'?'Bangalore':'Chennai'} · ${FORMATS[site.format].label}</div></div>
+          <button class="remove-x" data-del-site="${site.id}">✕</button>
+        </div>`).join('')}
+    </div>
+
+    <div class="admin-section">
+      <h3>Stakeholders</h3>
+      <div class="sub">Level is a reference label. Tag someone as an Approver to make them eligible for the 5-way panel below.</div>
+      <div class="field"><label>Name</label><input id="admShName" placeholder="e.g. Priya Nair"></div>
+      <div class="field"><label>Department</label><input id="admShDept" placeholder="e.g. Finance"></div>
+      <div class="field"><label>Level</label><select id="admShLevel">
+        ${LEVELS.map(l=>`<option value="${l.rank}">${l.label}</option>`).join('')}
+      </select></div>
+      <div class="field" style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+        <input type="checkbox" id="admShApprover" style="width:auto;">
+        <label style="margin:0;text-transform:none;font-family:'Inter',sans-serif;font-size:13px;color:var(--ink);">Tag as approver</label>
+      </div>
+      <div class="btn-row"><button class="btn primary" id="admAddSh">Add stakeholder</button></div>
+      ${board.stakeholders.map(p=>`
+        <div class="admin-row">
+          <div style="flex:1;"><div class="admin-row-main">${escapeHtml(p.name)}</div>
+            <div class="admin-row-sub">${escapeHtml(p.department)}</div></div>
+          <select data-level-edit="${p.id}" style="width:auto;font-size:11px;padding:5px 6px;">
+            ${LEVELS.map(l=>`<option value="${l.rank}" ${l.rank===p.level?'selected':''}>${l.label}</option>`).join('')}
+          </select>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--sub);white-space:nowrap;margin-left:8px;">
+            <input type="checkbox" data-approver-edit="${p.id}" ${p.isApprover?'checked':''} style="width:auto;"> Approver
+          </label>
+          <button class="remove-x" data-del-sh="${p.id}">✕</button>
+        </div>`).join('')}
+    </div>
+
+    <div class="admin-section">
+      <h3>5-Way Approval Panel</h3>
+      <div class="sub">Stage 04 sign-off. Only stakeholders tagged as Approver above are eligible.</div>
+      ${[0,1,2,3,4].map(i=>{
+        const eligible = board.stakeholders.filter(p=>p.isApprover);
+        const currentId = board.approvalPanel[i] || '';
+        return `<div class="approver-slot-row">
+          <label>Seat ${i+1}</label>
+          <select data-slot="${i}">
+            <option value="">— unassigned —</option>
+            ${eligible.map(p=>`<option value="${p.id}" ${p.id===currentId?'selected':''}>${escapeHtml(p.name)} (${levelLabel(p.level)})</option>`).join('')}
+          </select>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="admin-section">
+      <h3>Signed-in users</h3>
+      <div class="sub">Everyone who has logged in with an email to update this board.</div>
+      ${board.users.length === 0 ? `<div class="admin-row-sub" style="padding:8px 0;">No one has signed in yet.</div>` :
+        board.users.map(u=>`
+        <div class="admin-row">
+          <div><div class="admin-row-main">${escapeHtml(u.name)}</div>
+            <div class="admin-row-sub">${escapeHtml(u.email)} · first signed in ${fmtDate(u.firstLoginAt)}</div></div>
+          <button class="remove-x" data-del-user="${escapeHtml(u.email)}">✕</button>
+        </div>`).join('')}
+    </div>
+  `;
+
+  el.querySelectorAll('[data-del-user]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const email = btn.dataset.delUser;
+      board.users = board.users.filter(u=>u.email!==email);
+      await saveBoard(); render();
+    };
+  });
+
+  document.getElementById('admAddSite').onclick = async ()=>{
+    const name = document.getElementById('admSiteName').value.trim();
+    if(!name) return;
+    const site = { id: uid('site'), name, city: document.getElementById('admSiteCity').value, format: document.getElementById('admSiteFormat').value };
+    board.sites.push(site);
+    board.siteData[site.id] = makeSiteData(site);
+    activeStore = site.id;
+    await saveBoard();
+    currentView = 'tracker';
+    render();
+  };
+  el.querySelectorAll('[data-del-site]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = btn.dataset.delSite;
+      board.sites = board.sites.filter(s=>s.id!==id);
+      delete board.siteData[id];
+      if(activeStore === id) activeStore = board.sites.length ? board.sites[0].id : null;
+      await saveBoard(); render();
+    };
+  });
+
+  document.getElementById('admAddSh').onclick = async ()=>{
+    const name = document.getElementById('admShName').value.trim();
+    if(!name) return;
+    const p = { id: uid('sh'), name, department: document.getElementById('admShDept').value.trim(),
+      level: parseInt(document.getElementById('admShLevel').value),
+      isApprover: document.getElementById('admShApprover').checked };
+    board.stakeholders.push(p);
+    await saveBoard(); render();
+  };
+  el.querySelectorAll('[data-del-sh]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = btn.dataset.delSh;
+      board.stakeholders = board.stakeholders.filter(p=>p.id!==id);
+      board.approvalPanel = board.approvalPanel.map(pid=>pid===id?'':pid);
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-level-edit]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const p = board.stakeholders.find(x=>x.id===sel.dataset.levelEdit);
+      if(p) p.level = parseInt(sel.value);
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-approver-edit]').forEach(chk=>{
+    chk.onchange = async ()=>{
+      const p = board.stakeholders.find(x=>x.id===chk.dataset.approverEdit);
+      if(p) p.isApprover = chk.checked;
+      if(!chk.checked) board.approvalPanel = board.approvalPanel.map(pid=>pid===p.id?'':pid);
+      await saveBoard(); render();
+    };
+  });
+
+  el.querySelectorAll('[data-slot]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const i = parseInt(sel.dataset.slot);
+      board.approvalPanel[i] = sel.value;
+      await saveBoard(); render();
+    };
+  });
+}
+
+document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; render(); };
+document.getElementById('navAdmin').onclick = ()=>{ currentView='admin'; render(); };
+
+// ---------- Google sign-in + Drive sync ----------
+function showAuthError(msg){
+  const el = document.getElementById('loginErr');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function afterAuth(){
+  try{
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    const info = await res.json();
+    const email = (info.email || '').toLowerCase();
+    if(!email.endsWith('@' + ALLOWED_DOMAIN)){
+      showAuthError(`Access is restricted to @${ALLOWED_DOMAIN} accounts. You signed in as ${info.email || 'an unrecognized account'} — try again with your Paradise email.`);
+      accessToken = null;
+      return;
+    }
+    currentUser = { email, name: info.name || email };
+    document.getElementById('loginErr').style.display = 'none';
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('whoDisplay').textContent = `Signed in as ${currentUser.name}`;
+
+    await loadBoard(); // pulls the shared file from Drive (creates it on first-ever run)
+    if(!board.users.find(u => u.email === email)){
+      board.users.push({ email, name: currentUser.name, firstLoginAt: Date.now() });
+      await saveBoard();
+    }
+    render();
+  }catch(e){
+    console.error(e);
+    showAuthError('Sign-in failed — please try again.');
+  }
+}
+
+function initGoogleAuth(){
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (resp)=>{
+      if(resp.error){
+        if(resp.error !== 'immediate_failed' && resp.error !== 'popup_closed_by_user'){
+          showAuthError('Sign-in failed: ' + resp.error);
+        }
+        return;
+      }
+      accessToken = resp.access_token;
+      afterAuth();
+    }
+  });
+  // try a silent sign-in first, so a returning user with an active Google session skips the click
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
+(function waitForGoogleLib(){
+  const check = setInterval(()=>{
+    if(window.google && google.accounts && google.accounts.oauth2){
+      clearInterval(check);
+      initGoogleAuth();
+    }
+  }, 100);
+})();
+
+document.getElementById('googleSignInBtn').onclick = ()=>{
+  document.getElementById('loginErr').style.display = 'none';
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+};
+
+document.getElementById('switchUserBtn').onclick = ()=>{
+  if(accessToken){
+    google.accounts.oauth2.revoke(accessToken, ()=>{});
+  }
+  accessToken = null;
+  currentUser = null;
+  driveFileId = null;
+  document.getElementById('loginErr').style.display = 'none';
+  document.getElementById('loginGate').style.display = 'flex';
+};
+
+setInterval(()=>{ if(accessToken) loadBoard(); }, 20000);
+</script>
+</body>
+
+</html>
