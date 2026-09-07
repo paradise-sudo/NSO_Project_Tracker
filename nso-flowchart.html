@@ -1,0 +1,3045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSO Approval Flow — FY27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
+<style>
+  :root{
+    --maroon:#4B1010; --maroon-dark:#350B0B;
+    --bg:#F7F1E6;
+    --card:#FFFFFF; --ink:#2B1A12; --sub:#8A7268; --line:#E8DCC8;
+    --task-bg:#F3E9DC; --task-ink:#4B1010;
+    --appr-bg:#F5E6C8; --appr-ink:#8A5A12;
+    --gate-bg:#F3DCD8; --gate-ink:#8A2E2E;
+    --done:#2F7A4F; --done-bg:#E3F2E7;
+    --pending:#B8A99C; --pending-bg:#F2EDE6;
+    --active:#4B1010;
+    --restart:#C77A1F;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:0 0 90px;}
+  header{
+    position:sticky;top:0;z-index:10;background:var(--maroon);
+    padding:14px 16px 0;
+  }
+  .brand-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .brand-row img{height:38px;width:auto;border-radius:4px;}
+  .brand-row .brand-text{color:#fff;}
+  .eyebrow{
+    font-family:'Inter',sans-serif;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:#E8C79A;margin:0;font-weight:600;
+  }
+  h1{font-family:'Inter',sans-serif;font-weight:700;font-size:19px;margin:0;color:#fff;}
+
+  .nav-tabs{display:flex;gap:4px;margin-bottom:0;}
+  .nav-tab{
+    flex:1;text-align:center;padding:11px 0;font-family:'Inter',sans-serif;font-size:12.5px;font-weight:700;
+    letter-spacing:.02em;color:#E8C79A;background:none;border:none;
+    border-bottom:2px solid transparent;cursor:pointer;
+  }
+  .nav-tab.active{color:#fff;border-bottom-color:#D68730;}
+
+  .who-row{display:flex;gap:8px;align-items:center;margin:10px 0;padding:0 0 12px;}
+  .who-row span{font-size:12px;color:#E8C79A;}
+  .who-row input{
+    flex:1;padding:8px 10px;border-radius:6px;border:1px solid var(--line);
+    background:#fff;font-family:'Inter',sans-serif;font-size:12.5px;font-weight:600;
+  }
+
+  .store-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:12px;-ms-overflow-style:none;scrollbar-width:none;}
+  .store-tabs::-webkit-scrollbar{display:none;}
+
+  /* ---- Desktop / wide-viewport layout: left-side collapsible panel ----
+     Mobile stays exactly as designed above; this only kicks in on wider screens. */
+  .sidebar-collapse-toggle{display:none;}
+  .nav-tab-short{display:none;}
+  @media (min-width: 900px){
+    body{background:var(--bg);}
+    .wrap{display:flex;align-items:flex-start;max-width:none;padding:0;}
+    header{
+      position:sticky;top:0;align-self:flex-start;height:100vh;width:220px;flex:none;
+      overflow-y:auto;padding:16px 14px;box-sizing:border-box;transition:width .2s ease;
+    }
+    header.collapsed{width:64px;padding:16px 10px;}
+    header.collapsed .brand-text,
+    header.collapsed .nav-tab-label,
+    header.collapsed .who-row span,
+    header.collapsed #replayTutorialBtn{display:none;}
+    header.collapsed .brand-row img{margin:0 auto;}
+    header.collapsed .who-row{flex-direction:column;align-items:stretch;gap:4px;}
+    .nav-tabs{flex-direction:column;gap:2px;}
+    header.collapsed .nav-tab-short{display:inline;font-weight:700;}
+    .nav-tab{text-align:left;padding:11px 10px;border-bottom:none;border-radius:6px;border-left:3px solid transparent;}
+    .nav-tab.active{background:rgba(255,255,255,.08);border-left-color:#D68730;}
+    header.collapsed .nav-tab{text-align:center;padding:11px 4px;}
+    .who-row{flex-wrap:wrap;padding-bottom:0;}
+    .sidebar-collapse-toggle{
+      display:block;margin-top:14px;width:100%;background:rgba(255,255,255,.08);border:none;color:#E8C79A;
+      border-radius:6px;padding:8px 0;font-size:14px;cursor:pointer;
+    }
+    .main-content{flex:1;min-width:0;max-width:640px;margin:0 auto;padding:0 0 40px;}
+    .store-tabs{padding:16px 14px 12px;}
+  }
+  .store-tab{
+    flex:none;font-family:'Inter',sans-serif;font-size:11.5px;font-weight:600;
+    padding:8px 12px;border-radius:20px;border:1px solid var(--line);background:#fff;color:var(--sub);
+    cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px;
+  }
+  .store-tab .pip{width:6px;height:6px;border-radius:50%;background:var(--pending);}
+  .store-tab.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .store-tab.active .pip{background:#fff;}
+
+  .store-summary{
+    margin:14px 14px 0;padding:12px 14px;background:#fff;border:1px solid var(--line);border-radius:10px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .store-summary .name{font-family:'Inter',sans-serif;font-weight:600;font-size:15px;}
+  .store-summary .city{font-size:11.5px;color:var(--sub);}
+  .stage-pill{
+    font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;border-radius:20px;
+  }
+
+  #flow{padding:16px 14px 0;position:relative;}
+  .rail-line{position:absolute;left:37px;top:16px;bottom:16px;width:2px;background:var(--line);z-index:0;}
+
+  .delay-banner{
+    background:#FDECD8;border:1px solid #F0CBA0;border-radius:10px;padding:11px 13px;margin:14px 0 4px;
+    font-size:12.5px;line-height:1.5;color:#8A4A16;font-weight:500;
+  }
+  .delay-banner > div{margin-bottom:6px;}
+  .delay-banner > div:last-child{margin-bottom:0;}
+
+  .stage-row{position:relative;z-index:1;display:flex;gap:12px;margin-bottom:12px;}
+  .stage-dot{
+    flex:none;width:24px;height:24px;border-radius:50%;background:var(--pending-bg);border:2px solid var(--pending);
+    display:flex;align-items:center;justify-content:center;font-family:'Inter',sans-serif;font-size:10px;
+    font-weight:700;color:var(--pending);margin-top:14px;
+  }
+  .stage-dot.done{background:var(--done);border-color:var(--done);color:#fff;}
+  .stage-dot.active{background:var(--active);border-color:var(--active);color:#fff;box-shadow:0 0 0 4px #F0DFC2;}
+  .stage-dot.declined{background:var(--restart);border-color:var(--restart);color:#fff;}
+  .stage-dot.overdue{background:#C13E3E;border-color:#C13E3E;color:#fff;}
+
+  .stage-card{
+    flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    box-shadow:0 1px 2px rgba(20,30,50,.04);cursor:pointer;
+  }
+  .stage-card.pending{opacity:.55;}
+  .stage-card.active{border-color:var(--active);box-shadow:0 0 0 2px #F0DFC2;}
+  .stage-card.skip{opacity:.35;}
+  .stage-card.overdue-card{border-color:#E0A0A0;box-shadow:0 0 0 2px #FBE3E3;}
+
+  .stage-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .stage-badge{
+    font-family:'Inter',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    padding:3px 7px;border-radius:4px;
+  }
+  .stage-badge.task{background:var(--task-bg);color:var(--task-ink);}
+  .stage-badge.approval{background:var(--appr-bg);color:var(--appr-ink);}
+  .stage-badge.gate{background:var(--gate-bg);color:var(--gate-ink);}
+  .stage-badge.checklist{background:var(--done-bg);color:var(--done);}
+  .stage-title{font-family:'Inter',sans-serif;font-weight:600;font-size:14.5px;margin-top:5px;line-height:1.25;}
+  .stage-dur{font-family:'Inter',sans-serif;font-size:10.5px;color:var(--sub);flex:none;white-space:nowrap;}
+  .stage-dur.overdue-dur{color:#C13E3E;font-weight:700;}
+  .stage-owner{font-size:11.5px;color:var(--sub);margin-top:5px;}
+  .stage-status{font-size:11px;font-weight:600;margin-top:6px;}
+  .stage-status.done{color:var(--done);}
+  .stage-status.active{color:var(--active);}
+  .stage-status.pending{color:var(--pending);}
+  .stage-status.declined{color:var(--restart);}
+  .stage-status.overdue{color:#C13E3E;}
+  .restart-note{
+    display:flex;align-items:center;gap:5px;margin:2px 0 8px 36px;font-size:11px;color:var(--restart);
+    font-family:'Inter',sans-serif;font-weight:600;
+  }
+
+  .sheet-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(15,20,30,.55);z-index:30;
+    align-items:flex-end;justify-content:center;
+  }
+  .sheet-backdrop.open{display:flex;}
+  .sheet{
+    width:100%;max-width:640px;background:#fff;border-radius:16px 16px 0 0;padding:20px 18px 26px;
+    max-height:88vh;overflow-y:auto;
+  }
+  .sheet-badge{margin-bottom:6px;}
+  .sheet h2{font-family:'Inter',sans-serif;font-size:19px;margin:4px 0 6px;}
+  .sheet .meta{font-size:12.5px;color:var(--sub);margin-bottom:10px;}
+  .sheet .desc{font-size:13.5px;line-height:1.5;color:var(--ink);margin-bottom:10px;}
+  .warn{
+    background:var(--gate-bg);color:#8A2E2E;font-size:12.5px;padding:10px 12px;border-radius:8px;
+    margin-bottom:12px;line-height:1.4;font-weight:500;
+  }
+  .info-box{
+    background:var(--task-bg);color:#333B7A;font-size:12.5px;padding:10px 12px;border-radius:8px;
+    margin-bottom:12px;line-height:1.4;font-weight:500;
+  }
+  .approver-list{margin:10px 0;}
+
+  .collapse-group{
+    border:1px solid var(--line);border-radius:10px;margin-top:12px;overflow:hidden;
+  }
+  .collapse-group summary{
+    padding:12px 14px;font-family:'Inter',sans-serif;font-weight:700;font-size:13.5px;
+    cursor:pointer;background:var(--task-bg);color:var(--maroon);list-style:none;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .collapse-group summary::-webkit-details-marker{display:none;}
+  .collapse-group summary::after{content:'▾';font-size:11px;color:var(--sub);}
+  .collapse-group[open] summary::after{content:'▴';}
+  .collapse-group > *:not(summary){margin-left:14px;margin-right:14px;}
+  .collapse-group > .field:last-of-type, .collapse-group > .mini-task-card:last-of-type{margin-bottom:14px;}
+  .collapse-group > summary + *{margin-top:12px;}
+
+  .mini-task-card{
+    background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;
+  }
+  .mini-task-card.done{background:var(--done-bg);border-color:#BEDFC9;}
+  .mini-task-card.overdue-card{border-color:#E0A0A0;background:var(--gate-bg);}
+  .mini-task-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .mini-task-label{font-weight:600;font-size:13px;color:var(--ink);}
+  .mini-task-sla{font-size:10.5px;color:var(--sub);white-space:nowrap;}
+  .mini-task-sla.overdue-dur{color:#8A2E2E;font-weight:700;}
+  .mini-task-row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;}
+  .mini-task-check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink);white-space:nowrap;}
+  .mini-task-check input{width:auto;}
+  .mini-task-row input[type="date"]{flex:1;min-width:130px;padding:6px 8px;font-size:12px;border-radius:6px;border:1px solid var(--line);}
+  .mini-task-flag{color:#8A2E2E;font-size:11.5px;font-weight:700;margin-top:6px;}
+  .approver{
+    display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);
+    font-size:13.5px;
+  }
+  .approver:last-child{border-bottom:none;}
+  .approver .check{
+    width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;cursor:pointer;
+  }
+  .approver .check.on{background:var(--done);border-color:var(--done);}
+  .approver-name{flex:1;}
+  .approver-stamp{font-size:10.5px;color:var(--sub);font-family:'Inter',sans-serif;}
+
+  .btn-row{display:flex;gap:10px;margin-top:16px;}
+  .btn{flex:1;padding:12px;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;font-family:'Inter',sans-serif;}
+  .btn.primary{background:var(--ink);color:#fff;}
+  .btn.decline{background:transparent;color:var(--restart);border:1px solid #F0D2BC;}
+  .btn.ghost{background:transparent;color:var(--sub);border:1px solid var(--line);}
+  .field label{
+    display:block;font-family:'Inter',sans-serif;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--sub);margin-bottom:6px;margin-top:12px;
+  }
+  .field textarea, .field input, .field select{
+    width:100%;padding:11px;border-radius:6px;border:1px solid var(--line);font-size:16px;font-family:'Inter',sans-serif;background:#fff;
+  }
+  .field textarea{min-height:56px;resize:vertical;}
+  .progress-line{font-size:12px;color:var(--sub);margin-top:8px;font-family:'Inter',sans-serif;}
+  .log{font-size:11px;color:var(--sub);margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;line-height:1.6;max-height:110px;overflow-y:auto;}
+  .loading{text-align:center;padding:50px;color:var(--sub);font-family:'Inter',sans-serif;font-size:12.5px;}
+
+  /* Admin view */
+  .admin-wrap{padding:16px 14px 0;}
+  .admin-section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px;}
+  .admin-section h3{font-family:'Inter',sans-serif;font-size:15px;margin:0 0 3px;}
+  .admin-section .sub{font-size:12px;color:var(--sub);margin-bottom:12px;}
+  .admin-row{
+    display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;
+  }
+  .admin-row:last-child{border-bottom:none;}
+  .admin-row-main{font-weight:600;}
+  .admin-row-sub{font-size:11.5px;color:var(--sub);}
+  .level-badge{
+    font-family:'Inter',sans-serif;font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;
+    background:var(--task-bg);color:var(--task-ink);white-space:nowrap;
+  }
+  .remove-x{
+    background:none;border:none;color:var(--sub);font-size:16px;cursor:pointer;padding:2px 6px;flex:none;
+  }
+  .approver-slot-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);}
+  .approver-slot-row:last-child{border-bottom:none;}
+  .approver-slot-row label{margin:0;font-size:12px;color:var(--sub);}
+  .approver-slot-row select{width:auto;flex:1;margin-left:10px;}
+  .empty-note{text-align:center;padding:40px 20px;color:var(--sub);font-size:13px;}
+
+  .attachment-row{gap:10px;}
+  .attach-thumb{width:40px;height:40px;object-fit:cover;border-radius:6px;flex:none;cursor:pointer;}
+  .attach-file-icon{width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+    background:var(--task-bg);border-radius:6px;flex:none;font-size:18px;cursor:pointer;}
+  .file-preview-overlay{
+    display:none;position:fixed;inset:0;background:rgba(20,10,10,.9);z-index:40;
+    align-items:center;justify-content:center;padding:24px;
+  }
+  .file-preview-overlay.open{display:flex;}
+  .file-preview-overlay img{max-width:100%;max-height:80vh;border-radius:8px;}
+  .file-preview-overlay iframe{width:100%;height:80vh;border:none;border-radius:8px;background:#fff;}
+  .file-preview-close{
+    position:absolute;top:18px;right:18px;background:#fff;border:none;border-radius:50%;
+    width:38px;height:38px;font-size:18px;cursor:pointer;z-index:41;
+  }
+
+  .tutorial-overlay{position:fixed;inset:0;z-index:300;pointer-events:none;}
+  .tutorial-splash{
+    position:fixed;inset:0;background:rgba(20,10,10,.94);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:28px;pointer-events:auto;color:#fff;text-align:center;
+  }
+  .tutorial-splash h2{font-family:'Inter',sans-serif;font-weight:700;font-size:22px;margin:0 0 12px;}
+  .tutorial-splash p{font-size:14px;color:#E8C79A;max-width:320px;margin:0 0 22px;line-height:1.5;}
+  .tutorial-splash .btn-row{max-width:280px;}
+  .tutorial-spotlight{
+    position:fixed;border-radius:10px;box-shadow:0 0 0 9999px rgba(10,5,5,.82);
+    pointer-events:none;transition:all .25s ease;z-index:301;border:2px solid var(--gold);
+  }
+  .tutorial-callout{
+    position:fixed;background:#fff;border-radius:10px;padding:16px;max-width:280px;
+    z-index:302;pointer-events:auto;box-shadow:0 8px 24px rgba(0,0,0,.35);transition:all .25s ease;
+  }
+  .tutorial-step-count{font-size:10.5px;color:var(--sub);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+  .tutorial-callout h3{font-family:'Inter',sans-serif;font-size:15px;margin:0 0 6px;color:var(--maroon);}
+  .tutorial-callout p{font-size:13px;color:var(--ink);margin:0 0 12px;line-height:1.4;}
+  .tutorial-callout .btn-row{margin-top:0;}
+
+  .login-gate{
+    position:fixed;inset:0;z-index:100;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+    background-image:radial-gradient(var(--dot) 1px, transparent 1px);background-size:16px 16px;
+  }
+  .login-card{
+    width:100%;max-width:400px;background:#fff;border:1px solid var(--line);border-radius:14px;
+    padding:24px 22px;box-shadow:0 8px 30px rgba(20,30,50,.1);
+  }
+  .login-card h2{font-family:'Inter',sans-serif;font-size:20px;margin:2px 0 10px;}
+  .login-note{font-size:12.5px;color:var(--sub);line-height:1.5;margin-bottom:6px;}
+  .auth-tabs{display:flex;gap:6px;margin-bottom:18px;}
+  .auth-tabs .auth-tab{
+    flex:1;padding:9px;font-size:13px;font-weight:600;border-radius:7px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .auth-tabs .auth-tab.active{background:var(--maroon);border-color:var(--maroon);color:#fff;}
+  .switch-link{
+    background:none;border:none;color:var(--task-ink);font-size:12px;font-weight:600;cursor:pointer;
+    text-decoration:underline;padding:0;
+  }
+</style>
+</head>
+<body>
+<div class="login-gate" id="loginGate">
+  <div class="login-card">
+    <p class="eyebrow">NSO Approval Flow</p>
+    <h2>Sign in to continue</h2>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" id="authTabLogin">Log in</button>
+      <button type="button" class="auth-tab" id="authTabSignup">Sign up</button>
+    </div>
+
+    <!-- Log in: plain email + password, no OTP -->
+    <div id="loginForm">
+      <div class="field">
+        <label>Email</label>
+        <input id="loginEmail" type="email" placeholder="you@company.com">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="loginPassword" type="password" placeholder="••••••••">
+      </div>
+      <div id="loginMsg" class="login-note" style="color:#C13E3E;display:none;"></div>
+      <div class="btn-row"><button class="btn primary" id="loginBtn">Log in</button></div>
+    </div>
+
+    <!-- Sign up: email -> code -> password, in three steps -->
+    <div id="signupStep1" style="display:none;">
+      <div class="field">
+        <label>Work email</label>
+        <input id="signupEmail" type="email" placeholder="you@company.com">
+      </div>
+      <div id="signupStep1Msg" class="login-note" style="color:#C13E3E;display:none;"></div>
+      <div class="btn-row"><button class="btn primary" id="sendOtpBtn">Send verification code</button></div>
+    </div>
+
+    <div id="signupStep2" style="display:none;">
+      <p class="login-note">Enter the 6-digit code sent to <strong id="signupEmailConfirm"></strong></p>
+      <div class="field">
+        <input id="otpInput" type="text" inputmode="numeric" maxlength="6" placeholder="123456" style="letter-spacing:4px;font-size:18px;">
+      </div>
+      <div id="signupStep2Msg" class="login-note" style="color:#C13E3E;display:none;"></div>
+      <div class="btn-row"><button class="btn primary" id="verifyOtpBtn">Verify code</button></div>
+      <div class="btn-row"><button class="btn ghost" id="resendOtpBtn">Resend code</button></div>
+    </div>
+
+    <div id="signupStep3" style="display:none;">
+      <p class="login-note">Create a password for your account</p>
+      <div class="field">
+        <label>Password (min 8 characters)</label>
+        <input id="newPassword" type="password" placeholder="••••••••">
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input id="newPasswordConfirm" type="password" placeholder="••••••••">
+      </div>
+      <div id="signupStep3Msg" class="login-note" style="color:#C13E3E;display:none;"></div>
+      <div class="btn-row"><button class="btn primary" id="createAccountBtn">Create account</button></div>
+    </div>
+
+    <!-- First-ever sign-in only: shown right after account creation, once -->
+    <div id="loginNameField" class="field" style="display:none;">
+      <label>Your name?</label>
+      <input id="loginName" placeholder="e.g. Ayush">
+      <div class="btn-row" style="margin-top:10px;"><button class="btn primary" id="saveNameBtn">Save & continue</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <header>
+    <div class="brand-row">
+      <img src="data:image/png;base64,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" alt="Paradise">
+      <div class="brand-text">
+        <p class="eyebrow">Live shared board · NSO FY27</p>
+        <h1>NSO Approval Flow</h1>
+      </div>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab" id="navTracker"><span class="nav-tab-short">T</span><span class="nav-tab-label">Tracker</span></button>
+      <button class="nav-tab" id="navMyTasks"><span class="nav-tab-short">M</span><span class="nav-tab-label">My Tasks</span></button>
+      <button class="nav-tab" id="navFiles"><span class="nav-tab-short">F</span><span class="nav-tab-label">Files</span></button>
+      <button class="nav-tab" id="navCapex"><span class="nav-tab-short">C</span><span class="nav-tab-label">CapEx</span></button>
+      <button class="nav-tab" id="navTemplates"><span class="nav-tab-short">P</span><span class="nav-tab-label">Templates</span></button>
+      <button class="nav-tab" id="navAdmin"><span class="nav-tab-short">A</span><span class="nav-tab-label">Admin</span></button>
+    </div>
+    <div class="who-row">
+      <span id="whoDisplay">Signed in as —</span>
+      <button class="switch-link" id="switchUserBtn">switch</button>
+      <button class="switch-link" id="replayTutorialBtn">tutorial</button>
+    </div>
+    <button class="sidebar-collapse-toggle" id="sidebarCollapseToggle" title="Collapse panel">‹</button>
+  </header>
+
+  <main class="main-content">
+    <div class="store-tabs" id="storeTabs"></div>
+    <div class="store-summary" id="storeSummary"></div>
+    <div id="flow" class="loading">Loading board…</div>
+    <div id="myTasksView" class="admin-wrap" style="display:none;"></div>
+    <div id="filesView" class="admin-wrap" style="display:none;"></div>
+    <div id="capexView" class="admin-wrap" style="display:none;"></div>
+    <div id="templatesView" class="admin-wrap" style="display:none;"></div>
+    <div id="adminView" class="admin-wrap" style="display:none;"></div>
+  </main>
+</div>
+
+<div class="sheet-backdrop" id="sheetBackdrop">
+  <div class="sheet" id="sheetBody"></div>
+</div>
+
+<div class="file-preview-overlay" id="filePreviewOverlay">
+  <button class="file-preview-close" id="filePreviewClose">✕</button>
+  <div id="filePreviewContent"></div>
+</div>
+
+<div class="tutorial-overlay" id="tutorialOverlay" style="display:none;">
+  <div class="tutorial-splash" id="tutorialSplash" style="display:none;">
+    <h2 id="tutorialSplashTitle"></h2>
+    <p id="tutorialSplashText"></p>
+    <div class="btn-row">
+      <button class="btn ghost" id="tutorialSkipSplashBtn">Skip</button>
+      <button class="btn primary" id="tutorialStartBtn">Show me around</button>
+    </div>
+  </div>
+  <div class="tutorial-spotlight" id="tutorialSpotlight" style="display:none;"></div>
+  <div class="tutorial-callout" id="tutorialCallout" style="display:none;">
+    <div class="tutorial-step-count" id="tutorialStepCount"></div>
+    <h3 id="tutorialStepTitle"></h3>
+    <p id="tutorialStepText"></p>
+    <div class="btn-row">
+      <button class="btn ghost" id="tutorialSkipBtn">Skip tour</button>
+      <button class="btn primary" id="tutorialNextBtn">Next</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====== FIREBASE CONFIG — replace with your actual values from the Firebase console ======
+const firebaseConfig = {
+  apiKey: "AIzaSyA-r7z32FIq_bN40l86rxSdwaIkQycaRyo",
+  authDomain: "nso-tracker-507311.firebaseapp.com",
+  projectId: "nso-tracker-507311",
+  storageBucket: "nso-tracker-507311.firebasestorage.app",
+  messagingSenderId: "96188844887",
+  appId: "1:96188844887:web:a9bd75aefef64bb1340c12",
+  measurementId: "G-8LJP1PSY1C",
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const functionsClient = firebase.app().functions('asia-south1'); // must match the region set in Cloud Functions
+const sendOtpCodeFn = functionsClient.httpsCallable('sendOtpCode');
+const verifyOtpCodeFn = functionsClient.httpsCallable('verifyOtpCode');
+const createAccountFn = functionsClient.httpsCallable('createAccount');
+const loginFn = functionsClient.httpsCallable('login');
+const redeemScopedLinkFn = functionsClient.httpsCallable('redeemScopedLink');
+const storage = firebase.storage();
+const BOARD_DOC = db.collection('nso').doc('board');
+let unsubscribeBoard = null;
+let pendingNewUserEmail = null; // set while we're waiting on a first-time user's name
+
+const FORMATS = {
+  Omni: { label:'Omni (Dine-in)', sizeText:'1,200–1,300 sqft' },
+  CloudKitchen: { label:'Cloud Kitchen', sizeText:'650 sqft' },
+};
+const LEVELS = [
+  {rank:1, label:'Team Member'},
+  {rank:2, label:'Manager'},
+  {rank:3, label:'Senior Manager'},
+  {rank:4, label:'Director'},
+  {rank:5, label:'Leadership (MD/CFO/CXO)'},
+];
+let currentUser = null;
+
+const STAGE4_REQUIRED_LEVEL = 4; // kept for reference/labeling only — panel eligibility is now the manual Approver tag
+
+const STAGES = [
+  {id:1, num:'01', title:'Market & Area Identification', type:'task', owner:'Ayush + Abhik + Meenakshi + Rajeesh + Jimmy', duration:'1–3 Months', slaDays:90,
+   desc:'Internal SiteIQ + GeoIQ analysis scores locations across 6 lenses. Final Rank = Internal Score (35%) + Swiggy/Zomato Volume (35%) + Share Gap (30%). Areas finalised before any scouting begins.'},
+  {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', slaDays:14,
+   desc:'Physical scouting within identified markets.',
+   warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
+  {id:3, num:'03', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', slaDays:5,
+   desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
+  {id:4, num:'04', title:'Site Visit + Sign-Off', type:'approval', owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', slaDays:10,
+   desc:'All 5 panel members must physically visit the site. P&L reviewed on-site. No partial approvals — all 5 must sign off within the 10-day window.',
+   reworkTo:2},
+  {id:5, num:'05', title:'Feasibility + Service Req + CAPEX', type:'task', owner:'Ayush + Renuka + Sandeep', duration:'1 Week', slaDays:7,
+   desc:'Detailed feasibility study, service requirements mapped, final CAPEX estimated and approved. Runs in parallel with electrical load confirmation.'},
+  {id:6, num:'06', title:'Electrical Load Confirmation', type:'gate', owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', slaDays:14, bangaloreOnly:true,
+   desc:'Landlord must confirm electrical load in writing before the LOI can be signed.',
+   warning:'HARD GATE — Bangalore specific. LOI cannot be signed until load is confirmed in writing. New buildings strictly avoided. No exceptions.',
+   reworkTo:2},
+  {id:7, num:'07', title:'LOI Signing + Rent Structure', type:'task', owner:'Ayush + Finance', duration:'Post load confirm', slaDays:14,
+   desc:'LOI / term sheet signed post load confirmation. Legal (Gunjan) initiates Agreement documentation in parallel — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution.'},
+  {id:8, num:'08', title:'Security Deposit', type:'task', owner:'Ayush + Finance', duration:'1 Day', slaDays:1,
+   desc:'Security deposit paid to landlord post LOI signing.'},
+  {id:9, num:'09', title:'Agreement Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'14 Days', slaDays:14,
+   desc:'Lease agreement executed — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution finalised.'},
+  {id:10, num:'10', title:'Registration Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'35 Days', slaDays:35,
+   desc:'Lease agreement registered.'},
+  {id:11, num:'11', title:'Post-LOI Execution', type:'checklist', owner:'All Workstream Owners', duration:'~54 Days', slaDays:54,
+   desc:'Construction, hiring, licensing, equipment delivery, and design specs — running in parallel from Construction Start through Snags Sign-Off, per the NSO Projects 2026–27 tracker.'},
+];
+
+// ---- Stage 11 checklist item definitions (from NSO Projects 2026–27, rows 3 & 4) ----
+// Tasks: real SLA targets, days counted from Construction Start (the stage's startedAt)
+const STAGE11_TASKS = [
+  {key:'constructionStart', label:'Construction Start', slaDays:0},
+  {key:'equipmentIndent', label:"Equipment's Indent", slaDays:2},
+  {key:'storeTeamHiring', label:'Store Team Hiring', slaDays:20},
+  {key:'training', label:'Training', slaDays:40},
+  {key:'marketingPlan', label:'Marketing Plan', slaDays:42},
+  {key:'gstCertificate', label:'GST Certificate', slaDays:40},
+  {key:'licenses', label:'Licenses (Trade, FSSAI, Labour)', slaDays:40},
+  {key:'edcMachine', label:'EDC Machine', slaDays:45},
+  {key:'itAppSetup', label:'IT Application Setup', slaDays:42},
+  {key:'itInfraSetup', label:'IT Infra Setup', slaDays:43},
+  {key:'visiCooler', label:'Visi Cooler', slaDays:40},
+  {key:'llPendencies', label:'LL Pendencies', slaDays:25},
+  {key:'maintenanceVisit', label:'Maintenance Visit', slaDays:35},
+  {key:'maintenanceHandover', label:'Proposed Maintenance Handover', slaDays:47},
+  {key:'opsHandover', label:'Proposed Operations Handover', slaDays:48},
+  {key:'standardOpening', label:'Standard Opening Date', slaDays:50},
+  {key:'snagsSignOff', label:'Snags Sign-Off', slaDays:54},
+];
+// Design specs: one-time data capture, no SLA
+const STAGE11_DESIGN = [
+  {key:'totalCarpetArea', label:'Total Carpet Area (sqft)'},
+  {key:'bohArea', label:'BOH Area (sqft)'},
+  {key:'fohArea', label:'FOH Area (sqft)'},
+  {key:'toiletArea', label:'Toilet Area (sqft)'},
+  {key:'takeAwayArea', label:'Take Away Area (sqft)'},
+  {key:'additionalStorageArea', label:'Additional Storage Area (sqft)'},
+  {key:'outdoorSeatingArea', label:'Outdoor Seating Area (sqft)'},
+  {key:'covers', label:'Covers'},
+  {key:'outdoorSeating', label:'Outdoor Seating (count)'},
+  {key:'storeWidth', label:'Store Width'},
+  {key:'signageSize', label:'Signage Size'},
+  {key:'gfcDate', label:'GFC Date', dateTriplet:true},
+];
+// Equipment delivery log — each item tracks tentative start / delivery date / actual date
+const STAGE11_DELIVERY = [
+  {key:'dgDelivery', label:'DG Delivery', dateTriplet:true},
+  {key:'servoUpsDelivery', label:'Servo & UPS Delivery', dateTriplet:true},
+  {key:'roInstallation', label:'RO Installation', dateTriplet:true},
+  {key:'signageInstallation', label:'Signage Installation', dateTriplet:true},
+  {key:'ssFabricationDelivery', label:'SS Fabrication Delivery', dateTriplet:true},
+  {key:'furnitureDelivery', label:'Furniture Delivery', dateTriplet:true},
+  {key:'chillerFreezerDelivery', label:'Chiller/Freezer Delivery', dateTriplet:true},
+  {key:'rationalOvenDelivery', label:'Rational Oven Delivery', dateTriplet:true},
+  {key:'hvacInstallation', label:'HVAC Installation', dateTriplet:true},
+  {key:'miscItems', label:'Misc Items (air curtain, pesto flash, fire cylinder, DMBs)', dateTriplet:true},
+  {key:'ac', label:'AC', dateTriplet:true},
+  {key:'cctv', label:'CCTV', dateTriplet:true},
+];
+// Final stage outcome fields: logged once the store actually opens
+const STAGE11_FINAL = [
+  {key:'opening', label:'Store Opening', dateTriplet:true},
+  {key:'actualConstructionDays', label:'Actual Construction Days', type:'number'},
+];
+
+let board = null;
+let activeStore = null;
+let currentView = 'tracker';
+let pendingReportsToResolve = []; // { personId, name } — imported rows whose "Reports To" text didn't auto-match
+
+// ---------- Onboarding tutorial ----------
+let activeTutorial = null; // { id, steps, index } — id is null during a manual replay (nothing gets marked "seen")
+const GENERAL_TUTORIAL_STEPS = [
+  { view:'tracker', selector:'.nav-tabs', title:'Your navigation', text:'Tracker, My Tasks, Files, CapEx, and Admin (if you have access) — everything lives behind these tabs.' },
+  { view:'tracker', selector:'.store-tabs', title:'Pick a site', text:'Every site being tracked shows up here. Tap one to see its full pipeline.' },
+  { view:'tracker', selector:'.stage-card', title:'Update a stage', text:'Tap any stage to mark it complete, assign someone, upload a file, or flag a blocker.' },
+  { view:'myTasks', selector:'.admin-section', title:'Your assignments', text:'Anything assigned to you across every site shows up here — tap one to jump straight to it.' },
+  { view:'files', selector:'.admin-section', title:'Every file, organized', text:'Files are grouped by site and stage, newest first — no hunting through old messages.' },
+  { view:'tracker', selector:'#replayTutorialBtn', title:'Come back anytime', text:'Tap "tutorial" here whenever you want to see this walkthrough again.' },
+];
+const ADMIN_TUTORIAL_STEPS = [
+  { view:'admin', selector:'#adminRolesSection', title:'Roles', text:'Add other Admins or Developers here — no code changes needed.' },
+  { view:'admin', selector:'#adminStakeholdersSection', title:'Stakeholders', text:'Add your team one at a time or bulk-upload a CSV — set who reports to whom for notifications.' },
+  { view:'admin', selector:'#adminSlaSection', title:'SLA Settings', text:'Override the default deadline for any stage or Post-LOI task here.' },
+  { view:'capex', selector:'.admin-section', title:'CapEx', text:"Assign who builds the tentative budget and who reconciles actual costs — visible only to people on that site's cost list." },
+];
+
+// ROOT_ADMIN_EMAILS is a permanent, code-level fallback — it can never be removed through
+// the UI, so a mistake in the Firestore-editable admin list can never lock everyone out.
+// board.adminEmails / board.developerEmails hold everyone ELSE with those roles, editable
+// from Admin → Roles instead of by editing this file.
+const ROOT_ADMIN_EMAILS = ['kumar.ayush@paradisefoodcourt.in'];
+function isAdmin(){
+  if(!currentUser) return false;
+  const email = currentUser.email.toLowerCase();
+  return ROOT_ADMIN_EMAILS.includes(email) || (board && board.adminEmails && board.adminEmails.includes(email));
+}
+// Developer tier — defined now so it's ready for future structural features (editing,
+// reordering, or inserting stages). No developer-only capability exists yet.
+function isDeveloper(){
+  if(!currentUser) return false;
+  const email = currentUser.email.toLowerCase();
+  return board && board.developerEmails && board.developerEmails.includes(email);
+}
+// Cost visibility is UI-level only (same trust model as the rest of this tool) — admin,
+// or explicitly added to a site's cost-visible list, or one of that site's CapEx assignees.
+function isCostVisible(s){
+  if(isAdmin()) return true;
+  const me = findMyStakeholder();
+  if(!me || !s || !s.capex) return false;
+  return s.capex.costVisibleTo.includes(me.id) || s.capex.tentativeAssignees.includes(me.id) || s.capex.actualAssignees.includes(me.id);
+}
+// A line item is only eligible for actual-cost entry once it has a real tentative rate —
+// an item added but never estimated shouldn't block closure or accept an actual cost yet.
+function hasTentativeRate(li){
+  return li.tentativeRate !== '' && li.tentativeRate !== null && li.tentativeRate !== undefined && !isNaN(parseFloat(li.tentativeRate));
+}
+function capexActualsComplete(s){
+  const items = (s.capex && s.capex.lineItems) || [];
+  const relevant = items.filter(hasTentativeRate);
+  if(!relevant.length) return true;
+  return relevant.every(li => li.actualRate !== '' && li.actualRate !== null && li.actualRate !== undefined && !isNaN(parseFloat(li.actualRate)));
+}
+
+function uid(prefix){ return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function defaultBoard(){
+  const seedSites = [
+    {id:'BLR-1', name:'Bangalore — Site 1', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'BLR-2', name:'Bangalore — Site 2', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'BLR-3', name:'Bangalore — Site 3', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'BLR-4', name:'Bangalore — Site 4', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'CHN-1', name:'Chennai — Site 1', city:'CHN', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
+  ];
+  const seedStakeholders = [
+    {id:'sh_abhik', name:'Abhik Mitra', department:'MD Office', level:5, isApprover:true},
+    {id:'sh_jimmy', name:'Jimmy', department:'Finance (CFO)', level:5, isApprover:true},
+    {id:'sh_meenakshi', name:'Meenakshi', department:'Marketing', level:5, isApprover:true},
+    {id:'sh_rajeesh', name:'Rajeesh', department:'Technology', level:5, isApprover:true},
+    {id:'sh_ayush', name:'Ayush + Rajshekhar', department:'BD & Ops / Sales', level:4, isApprover:true},
+  ];
+  const seedTemplates = [
+    {
+      id: 'tmpl_nso',
+      name: 'NSO — New Store Opening',
+      description: "Paradise's 11-stage new store opening pipeline — Market Identification through Post-LOI Execution.",
+      builtIn: true,       // can't be deleted or reassigned; Admin-only to modify (no structure editor yet)
+      ownerId: null,       // no single Developer owns the built-in template
+      createdAt: Date.now(),
+    },
+  ];
+  const siteData = {};
+  seedSites.forEach(site=>{
+    siteData[site.id] = makeSiteData(site);
+  });
+  return {
+    sites: seedSites,
+    stakeholders: seedStakeholders,
+    approvalPanel: seedStakeholders.map(s=>s.id),
+    siteData,
+    users: [],
+    cities: [{code:'BLR', name:'Bangalore'}, {code:'CHN', name:'Chennai'}],
+    adminEmails: [], developerEmails: [],
+    templates: seedTemplates,
+    slaOverrides: {}, // { 'stage_<id>': days } or { 'task_<key>': days } — overrides the built-in defaults
+  };
+}
+
+function makeSiteData(site){
+  const stageData = {};
+  STAGES.forEach(st=>{
+    const skip = st.bangaloreOnly && site.city !== 'BLR';
+    stageData[st.id] = { status: skip ? 'skip' : (st.id===1 ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
+      startedAt: (st.id===1 && !skip) ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
+    if(st.id === 3){
+      stageData[st.id].financials = { capex:'', m1Revenue:'', monthlyGrowthPct:'', y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+    }
+    if(st.id === 11){
+      stageData[st.id].tasks = {};       // { key: {done, actualDate, tentativeStart, tentativeEnd, assignedTo, updatedBy, updatedAt} }
+      stageData[st.id].design = {};      // { key: value }
+      stageData[st.id].delivery = {};    // { key: value }
+      stageData[st.id].finalStage = {};  // { key: value }
+    }
+  });
+  return { current: 1, stageData, log: [], signingDate: null, comments: [], emailThread: null, projectClosed: false, closedBy: null, closedAt: null,
+    capex: { tentativeAssignees:[], actualAssignees:[], costVisibleTo:[], finalized:false, finalizedBy:null, finalizedAt:null, lineItems:[] }, closureOverride: null };
+}
+
+function subscribeToBoard(){
+  if(unsubscribeBoard) unsubscribeBoard();
+  unsubscribeBoard = BOARD_DOC.onSnapshot(async (docSnap)=>{
+    if(docSnap.exists){
+      board = docSnap.data();
+    } else {
+      board = defaultBoard();
+      try{ await BOARD_DOC.set(board); }catch(e){ console.error('Firestore init failed', e); }
+    }
+    if(!board.users) board.users = [];
+    if(!activeStore){ const vs = visibleSites(); if(vs.length) activeStore = vs[0].id; }
+    migrateStageStructure();
+    render();
+  }, (err)=>{ console.error('Firestore snapshot error', err); });
+}
+
+// Backfills any site whose stored data predates the Security Deposit / Agreement /
+// Registration / Post-LOI Execution restructure (adding stages 8-11 in their new shape).
+function migrateStageStructure(){
+  if(!board || !board.sites) return;
+  let changed = false;
+  if(!board.cities){ board.cities = [{code:'BLR', name:'Bangalore'}, {code:'CHN', name:'Chennai'}]; changed = true; }
+  if(!board.slaOverrides){ board.slaOverrides = {}; changed = true; }
+  if(!board.adminEmails){ board.adminEmails = []; changed = true; }
+  if(!board.developerEmails){ board.developerEmails = []; changed = true; }
+  if(!board.templates){
+    board.templates = [{
+      id: 'tmpl_nso', name: 'NSO — New Store Opening',
+      description: "Paradise's 11-stage new store opening pipeline — Market Identification through Post-LOI Execution.",
+      builtIn: true, ownerId: null, createdAt: Date.now(),
+    }];
+    changed = true;
+  }
+  board.sites.forEach(site=>{
+    if(!site.templateId){ site.templateId = 'tmpl_nso'; changed = true; }
+    if(!site.status){ site.status = 'live'; changed = true; } // pre-existing sites were always immediately visible
+    if(site.ownerId === undefined){ site.ownerId = null; changed = true; }
+  });
+  if(board.users){
+    board.users.forEach(u=>{ if(!u.tutorialsSeen){ u.tutorialsSeen = []; changed = true; } });
+  }
+  board.sites.forEach(site=>{
+    const s = board.siteData[site.id];
+    if(!s) return;
+    if(!s.comments){ s.comments = []; changed = true; }
+    if(s.projectClosed === undefined){ s.projectClosed = false; s.closedBy = null; s.closedAt = null; changed = true; }
+    if(!s.capex){ s.capex = { tentativeAssignees:[], actualAssignees:[], costVisibleTo:[], finalized:false, finalizedBy:null, finalizedAt:null, lineItems:[] }; changed = true; }
+    if(s.closureOverride === undefined){ s.closureOverride = null; changed = true; }
+    STAGES.forEach(st=>{
+      if(!s.stageData[st.id]){
+        const skip = st.bangaloreOnly && site.city !== 'BLR';
+        s.stageData[st.id] = { status: skip ? 'skip' : 'pending', approvals:{}, notes:'', updatedBy:'', updatedAt:0,
+          startedAt: null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
+        changed = true;
+      }
+      if(!s.stageData[st.id].attachments){ s.stageData[st.id].attachments = []; changed = true; }
+      if(!s.stageData[st.id].blockerFlags){ s.stageData[st.id].blockerFlags = []; changed = true; }
+      if(!Array.isArray(s.stageData[st.id].assignedTo)){ s.stageData[st.id].assignedTo = s.stageData[st.id].assignedTo ? [s.stageData[st.id].assignedTo] : []; changed = true; }
+      if(st.id === 11 && !s.stageData[11].tasks){
+        s.stageData[11].tasks = {};
+        s.stageData[11].design = {};
+        s.stageData[11].delivery = {};
+        s.stageData[11].finalStage = {};
+        changed = true;
+      }
+      if(st.id === 11 && s.stageData[11].tasks){
+        Object.values(s.stageData[11].tasks).forEach(rec=>{
+          if(!Array.isArray(rec.assignedTo)){ rec.assignedTo = rec.assignedTo ? [rec.assignedTo] : []; changed = true; }
+        });
+      }
+    });
+  });
+  if(board.stakeholders){
+    board.stakeholders.forEach(p=>{
+      if(p.email === undefined){ p.email = ''; changed = true; }
+      if(p.reportsTo === undefined){ p.reportsTo = null; changed = true; }
+    });
+  }
+  if(changed) saveBoard();
+}
+
+async function saveBoard(){
+  try{ await BOARD_DOC.set(board); }
+  catch(e){ console.error('Firestore save failed', e); }
+}
+function getWho(){ return (currentUser && currentUser.name) || 'someone'; }
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Escapes text, then turns any URL back into a real clickable link — for notes/comments,
+// where someone might paste a Drive/Docs link and expect it to actually work.
+function escapeAndLinkify(s){
+  const escaped = escapeHtml(s);
+  return escaped.replace(/(https?:\/\/[^\s<]+)/g, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+}
+
+// A date input with a Clear (✕) button — mobile date pickers default to "today" when
+// opened on an empty field, so this is the escape hatch if that gets confirmed by mistake.
+function dateFieldWithClear(id, value){
+  return `<div style="display:flex;gap:4px;align-items:center;">
+    <input type="date" id="${id}" value="${escapeHtml(value||'')}" style="flex:1;">
+    <button type="button" class="remove-x" data-clear-target="${id}" title="Clear date">✕</button>
+  </div>`;
+}
+// Three related dates for one item — tentative start, (tentative) delivery date, actual date.
+function renderDateTriplet(prefix, key, label, rec){
+  rec = rec || {};
+  return `<div style="margin-bottom:14px;padding:10px;border:1px solid var(--line);border-radius:8px;">
+    <label style="font-weight:600;font-size:12.5px;display:block;margin-bottom:8px;">${escapeHtml(label)}</label>
+    <div class="mini-task-row">
+      <div style="flex:1;min-width:110px;">
+        <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Tentative start</label>
+        ${dateFieldWithClear(`${prefix}_${key}_tstart`, rec.tentativeStart)}
+      </div>
+      <div style="flex:1;min-width:110px;">
+        <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Delivery date</label>
+        ${dateFieldWithClear(`${prefix}_${key}_delivery`, rec.deliveryDate)}
+      </div>
+    </div>
+    <div style="margin-top:8px;">
+      <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Actual date</label>
+      ${dateFieldWithClear(`${prefix}_${key}_actual`, rec.actualDate)}
+    </div>
+  </div>`;
+}
+function isImageFile(name){ return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(name||''); }
+function openFilePreview(url, name){
+  const content = document.getElementById('filePreviewContent');
+  if(isImageFile(name)){
+    content.innerHTML = `<img src="${url}" alt="${escapeHtml(name)}">`;
+  } else {
+    content.innerHTML = `<iframe src="${url}" title="${escapeHtml(name)}"></iframe>`;
+  }
+  document.getElementById('filePreviewOverlay').classList.add('open');
+}
+function timeAgo(ts){
+  if(!ts) return '';
+  const s = Math.round((Date.now()-ts)/1000);
+  if(s<60) return 'just now';
+  const m = Math.round(s/60); if(m<60) return m+'m ago';
+  const h = Math.round(m/60); if(h<24) return h+'h ago';
+  return Math.round(h/24)+'d ago';
+}
+function fmtDate(ts){
+  if(!ts) return null;
+  return new Date(ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+}
+function fmtINR(n){
+  if(!isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  let s;
+  if(abs >= 10000000) s = (n/10000000).toFixed(2)+'Cr';
+  else if(abs >= 100000) s = (n/100000).toFixed(2)+'L';
+  else s = Math.round(n).toLocaleString('en-IN');
+  return '₹'+s;
+}
+function levelLabel(rank){ const l = LEVELS.find(x=>x.rank===rank); return l ? l.label : 'Level '+rank; }
+
+function getSite(id){ return board.sites.find(s=>s.id===id); }
+function storeState(id){ return board.siteData[id]; }
+
+function calcProjection(f){
+  const capex = parseFloat(f.capex) || 0;
+  const cogsPct = parseFloat(f.cogsPct) || 0;
+  const fixedOpex = parseFloat(f.fixedOpex) || 0;
+  const monthlyGrowthPct = parseFloat(f.monthlyGrowthPct) || 0;
+  const y2GrowthPct = parseFloat(f.y2GrowthPct) || 0;
+  const y3GrowthPct = parseFloat(f.y3GrowthPct) || 0;
+  let revenue = parseFloat(f.m1Revenue) || 0;
+  let cumulative = -capex;
+  let paybackMonth = null;
+  let y = [ {rev:0, ebitda:0}, {rev:0, ebitda:0}, {rev:0, ebitda:0} ];
+  for(let m=1; m<=36; m++){
+    if(m>1){
+      if(m<=12) revenue = revenue * (1 + monthlyGrowthPct/100);
+      else if(m===13) revenue = revenue * (1 + y2GrowthPct/100);
+      else if(m===25) revenue = revenue * (1 + y3GrowthPct/100);
+    }
+    const cogs = revenue * cogsPct/100;
+    const ebitda = revenue - cogs - fixedOpex;
+    cumulative += ebitda;
+    if(paybackMonth===null && cumulative>=0 && capex>0) paybackMonth = m;
+    const yi = m<=12?0:(m<=24?1:2);
+    y[yi].rev += revenue; y[yi].ebitda += ebitda;
+  }
+  const totalEBITDA = y[0].ebitda + y[1].ebitda + y[2].ebitda;
+  const roi3yr = capex>0 ? ((totalEBITDA - capex)/capex*100) : 0;
+  return { paybackMonth, y, totalEBITDA, roi3yr };
+}
+
+function recompute(id){
+  const s = storeState(id);
+  let current = 1;
+  for(const st of STAGES){
+    const d = s.stageData[st.id];
+    if(d.status === 'done' || d.status === 'skip') continue;
+    current = st.id;
+    break;
+  }
+  s.current = current;
+  STAGES.forEach(st=>{
+    const d = s.stageData[st.id];
+    if(d.status === 'pending' && st.id === current){
+      d.status = 'active';
+      if(!d.startedAt) d.startedAt = Date.now();
+    }
+    if(d.status === 'active' && st.id !== current) d.status = 'pending';
+  });
+}
+
+// Admin-editable SLA overrides live in board.slaOverrides, keyed 'stage_<id>' or 'task_<key>'.
+// Falls back to the built-in default (from STAGES / STAGE11_TASKS) when no override is set.
+function effectiveSla(key, defaultDays){
+  if(board && board.slaOverrides && board.slaOverrides[key] !== undefined && board.slaOverrides[key] !== ''){
+    const v = parseInt(board.slaOverrides[key]);
+    if(!isNaN(v)) return v;
+  }
+  return defaultDays;
+}
+
+function stageTiming(st, d){
+  if(!d.startedAt || d.status==='done' || d.status==='skip') return null;
+  const elapsedDays = Math.floor((Date.now() - d.startedAt) / 86400000);
+  const sla = effectiveSla('stage_'+st.id, st.slaDays);
+  const overdueDays = elapsedDays - sla;
+  return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, sla };
+}
+
+// Same idea as stageTiming, but for an individual checklist item within Stage 11 —
+// all items share the stage's own startedAt (Construction Start) as their reference point.
+function itemTiming(startedAt, slaDays, taskKey){
+  if(!startedAt) return null;
+  const elapsedDays = Math.floor((Date.now() - startedAt) / 86400000);
+  const sla = taskKey ? effectiveSla('task_'+taskKey, slaDays) : slaDays;
+  const overdueDays = elapsedDays - sla;
+  return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, sla };
+}
+
+// Target opening date for a site — projected from Construction Start (Stage 11's start)
+// plus the Standard Opening Date SLA, or the actual/revised date once logged.
+function computeTargetOpening(s){
+  const d11 = s.stageData[11];
+  if(!d11) return null;
+  if(d11.finalStage && d11.finalStage.actualOpening) return { label:'opened', value: d11.finalStage.actualOpening };
+  if(d11.finalStage && d11.finalStage.revisedOpeningDate) return { label:'revised target', value: d11.finalStage.revisedOpeningDate };
+  if(d11.startedAt){
+    const standardOpeningSla = STAGE11_TASKS.find(t=>t.key==='standardOpening').slaDays;
+    return { label:'target opening', value: d11.startedAt + standardOpeningSla * 86400000 };
+  }
+  return null;
+}
+
+function render(){
+  if(currentView === 'admin' && !isAdmin()) currentView = 'tracker'; // force back if somehow set without permission
+
+  document.getElementById('navAdmin').style.display = isAdmin() ? '' : 'none';
+  document.getElementById('navMyTasks').style.display = findMyStakeholder() ? '' : 'none';
+  document.getElementById('navTracker').classList.toggle('active', currentView==='tracker');
+  document.getElementById('navMyTasks').classList.toggle('active', currentView==='myTasks');
+  document.getElementById('navFiles').classList.toggle('active', currentView==='files');
+  document.getElementById('navCapex').classList.toggle('active', currentView==='capex');
+  document.getElementById('navTemplates').classList.toggle('active', currentView==='templates');
+  document.getElementById('navAdmin').classList.toggle('active', currentView==='admin');
+  document.getElementById('storeTabs').style.display = currentView==='tracker' ? 'flex' : 'none';
+  document.getElementById('storeSummary').style.display = currentView==='tracker' ? 'flex' : 'none';
+  document.getElementById('flow').style.display = currentView==='tracker' ? 'block' : 'none';
+  document.getElementById('myTasksView').style.display = currentView==='myTasks' ? 'block' : 'none';
+  document.getElementById('filesView').style.display = currentView==='files' ? 'block' : 'none';
+  document.getElementById('capexView').style.display = currentView==='capex' ? 'block' : 'none';
+  document.getElementById('templatesView').style.display = currentView==='templates' ? 'block' : 'none';
+  document.getElementById('adminView').style.display = currentView==='admin' ? 'block' : 'none';
+
+  renderTabs();
+  if(currentView === 'tracker'){
+    renderSummary();
+    renderFlow();
+  } else if(currentView === 'myTasks'){
+    renderMyTasks();
+  } else if(currentView === 'files'){
+    renderFilesView();
+  } else if(currentView === 'capex'){
+    renderCapexView();
+  } else if(currentView === 'templates'){
+    renderTemplatesView();
+  } else {
+    renderAdmin();
+  }
+}
+
+// Matches the signed-in email to a stakeholder record, so assignments can be found.
+// Display label for a stakeholder in any picker — name, department, and who they report to.
+function stakeholderLabel(p){
+  const mgr = p.reportsTo ? board.stakeholders.find(x=>x.id===p.reportsTo) : null;
+  let label = p.name;
+  if(p.department) label += ' — ' + p.department;
+  if(mgr) label += ` (reports to ${mgr.name})`;
+  return label;
+}
+
+function findMyStakeholder(){
+  if(!currentUser || !board || !board.stakeholders) return null;
+  return board.stakeholders.find(p => p.email && p.email.toLowerCase() === currentUser.email.toLowerCase()) || null;
+}
+
+// Every open (not done/skipped) stage or Stage 11 task assigned to the signed-in person, across all sites.
+function findMyOpenAssignments(){
+  const me = findMyStakeholder();
+  if(!me || !board) return [];
+  const results = [];
+  board.sites.forEach(site=>{
+    const s = board.siteData[site.id];
+    if(!s) return;
+    STAGES.forEach(st=>{
+      const d = s.stageData[st.id];
+      if(!d || d.status==='done' || d.status==='skip') return;
+      if((d.assignedTo||[]).includes(me.id)){
+        results.push({ siteId: site.id, siteName: site.name, stageId: st.id, label: `${st.num} · ${st.title}` });
+      }
+      if(st.id === 11 && d.tasks){
+        STAGE11_TASKS.forEach(item=>{
+          const rec = d.tasks[item.key];
+          if(rec && (rec.assignedTo||[]).includes(me.id) && !rec.done){
+            results.push({ siteId: site.id, siteName: site.name, stageId: 11, label: `11 · ${item.label}` });
+          }
+        });
+      }
+    });
+  });
+  return results;
+}
+
+function showTutorialSplash(tutorialId, steps){
+  activeTutorial = { id: tutorialId, steps, index: 0 };
+  document.getElementById('tutorialSplashTitle').textContent = tutorialId==='admin' ? 'Welcome, Admin' : (tutorialId===null ? 'Tutorial' : 'Welcome to NSO Approval Flow');
+  document.getElementById('tutorialSplashText').textContent = tutorialId==='admin'
+    ? 'A quick look at where you manage sites, stakeholders, and cost.'
+    : (tutorialId===null ? 'A replay of the full walkthrough.' : 'Track every store opening from Market ID to Grand Opening, one shared board for everyone involved. Want a quick tour?');
+  document.getElementById('tutorialOverlay').style.display = 'block';
+  document.getElementById('tutorialSplash').style.display = 'flex';
+}
+
+function runTutorialStep(){
+  const step = activeTutorial.steps[activeTutorial.index];
+  if(step.view && step.view !== currentView){
+    currentView = step.view;
+    render();
+  }
+  requestAnimationFrame(()=>{
+    const target = document.querySelector(step.selector);
+    if(target) target.scrollIntoView({block:'center'});
+    requestAnimationFrame(positionTutorialStep);
+  });
+}
+
+function positionTutorialStep(){
+  if(!activeTutorial) return;
+  const step = activeTutorial.steps[activeTutorial.index];
+  const target = document.querySelector(step.selector);
+  const spotlight = document.getElementById('tutorialSpotlight');
+  const callout = document.getElementById('tutorialCallout');
+  if(!target){
+    // this step's element isn't on screen right now — skip it rather than get stuck
+    advanceTutorialStep();
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const pad = 6;
+  spotlight.style.left = (rect.left-pad)+'px';
+  spotlight.style.top = (rect.top-pad)+'px';
+  spotlight.style.width = (rect.width+pad*2)+'px';
+  spotlight.style.height = (rect.height+pad*2)+'px';
+  spotlight.style.display = 'block';
+
+  document.getElementById('tutorialStepCount').textContent = `Step ${activeTutorial.index+1} of ${activeTutorial.steps.length}`;
+  document.getElementById('tutorialStepTitle').textContent = step.title;
+  document.getElementById('tutorialStepText').textContent = step.text;
+  document.getElementById('tutorialNextBtn').textContent = (activeTutorial.index === activeTutorial.steps.length-1) ? 'Done' : 'Next';
+
+  const calloutTop = rect.bottom + 16;
+  const wouldOverflow = calloutTop + 180 > window.innerHeight;
+  callout.style.left = Math.max(12, Math.min(rect.left, window.innerWidth-292)) + 'px';
+  callout.style.top = (wouldOverflow ? Math.max(12, rect.top - 190) : calloutTop) + 'px';
+  callout.style.display = 'block';
+}
+
+function advanceTutorialStep(){
+  activeTutorial.index++;
+  if(activeTutorial.index >= activeTutorial.steps.length){ finishTutorial(); return; }
+  runTutorialStep();
+}
+
+async function finishTutorial(){
+  const id = activeTutorial ? activeTutorial.id : null;
+  document.getElementById('tutorialOverlay').style.display = 'none';
+  document.getElementById('tutorialSpotlight').style.display = 'none';
+  document.getElementById('tutorialCallout').style.display = 'none';
+  document.getElementById('tutorialSplash').style.display = 'none';
+  if(id){
+    const myUser = board.users.find(u=>u.email===currentUser.email);
+    if(myUser){
+      myUser.tutorialsSeen = myUser.tutorialsSeen || [];
+      if(!myUser.tutorialsSeen.includes(id)) myUser.tutorialsSeen.push(id);
+      await saveBoard();
+    }
+  }
+  activeTutorial = null;
+  currentView = 'tracker';
+  render();
+  maybeStartTutorials(); // chains into the admin tutorial if applicable and not yet seen
+}
+
+function maybeStartTutorials(){
+  if(!currentUser || !board) return;
+  const myUser = board.users.find(u=>u.email===currentUser.email);
+  const seen = (myUser && myUser.tutorialsSeen) || [];
+  if(!seen.includes('general')){
+    showTutorialSplash('general', GENERAL_TUTORIAL_STEPS);
+  } else if(isAdmin() && !seen.includes('admin')){
+    showTutorialSplash('admin', ADMIN_TUTORIAL_STEPS);
+  }
+}
+
+function replayTutorial(){
+  const steps = isAdmin() ? GENERAL_TUTORIAL_STEPS.concat(ADMIN_TUTORIAL_STEPS) : GENERAL_TUTORIAL_STEPS;
+  showTutorialSplash(null, steps);
+}
+
+document.getElementById('tutorialStartBtn').onclick = ()=>{
+  document.getElementById('tutorialSplash').style.display = 'none';
+  runTutorialStep();
+};
+document.getElementById('tutorialSkipSplashBtn').onclick = ()=> finishTutorial();
+document.getElementById('tutorialSkipBtn').onclick = ()=> finishTutorial();
+document.getElementById('tutorialNextBtn').onclick = ()=> advanceTutorialStep();
+document.getElementById('replayTutorialBtn').onclick = ()=> replayTutorial();
+
+// Desktop-only left sidebar collapse — remembered locally per device, purely a display preference.
+(function initSidebarCollapse(){
+  const headerEl = document.querySelector('header');
+  const toggleBtn = document.getElementById('sidebarCollapseToggle');
+  if(!headerEl || !toggleBtn) return;
+  let collapsed = false;
+  try{ collapsed = localStorage.getItem('nsoSidebarCollapsed') === '1'; }catch(e){}
+  if(collapsed){ headerEl.classList.add('collapsed'); toggleBtn.textContent = '›'; }
+  toggleBtn.onclick = ()=>{
+    collapsed = !collapsed;
+    headerEl.classList.toggle('collapsed', collapsed);
+    toggleBtn.textContent = collapsed ? '›' : '‹';
+    try{ localStorage.setItem('nsoSidebarCollapsed', collapsed ? '1' : '0'); }catch(e){}
+  };
+})();
+
+function goToAssignment(item){
+  activeStore = item.siteId;
+  currentView = 'tracker';
+  render();
+  openSheet(item.stageId);
+}
+
+function renderMyTasks(){
+  const el = document.getElementById('myTasksView');
+  const items = findMyOpenAssignments();
+  el.innerHTML = `
+    <div class="admin-section">
+      <h3>My Tasks</h3>
+      <div class="sub">Everything currently assigned to you, across every site.</div>
+      ${items.length === 0 ? `<div class="empty-note">Nothing assigned to you right now.</div>` : items.map((it,i)=>`
+        <div class="admin-row" data-my-task="${i}" style="cursor:pointer;">
+          <div><div class="admin-row-main">${escapeHtml(it.label)}</div>
+            <div class="admin-row-sub">${escapeHtml(it.siteName)}</div></div>
+        </div>`).join('')}
+    </div>
+  `;
+  el.querySelectorAll('[data-my-task]').forEach(row=>{
+    row.onclick = ()=> goToAssignment(items[parseInt(row.dataset.myTask)]);
+  });
+}
+
+function renderFilesView(){
+  const el = document.getElementById('filesView');
+  let html = `<div class="admin-section"><h3>Files</h3><div class="sub">Every file uploaded, organized by site and stage, newest first.</div></div>`;
+
+  const sites = visibleSites();
+  if(sites.length === 0){
+    html += `<div class="empty-note">No sites yet.</div>`;
+  }
+
+  sites.forEach(site=>{
+    const s = board.siteData[site.id];
+    if(!s) return;
+    const stagesWithFiles = STAGES.filter(st => s.stageData[st.id] && (s.stageData[st.id].attachments||[]).length);
+    const totalFiles = stagesWithFiles.reduce((sum,st)=>sum + s.stageData[st.id].attachments.length, 0);
+    if(totalFiles === 0) return;
+
+    html += `<details class="collapse-group">
+      <summary>${escapeHtml(site.name)} (${totalFiles})</summary>`;
+    stagesWithFiles.forEach(st=>{
+      const files = s.stageData[st.id].attachments.slice().sort((a,b)=>b.uploadedAt - a.uploadedAt);
+      html += `<details class="collapse-group" style="margin-top:8px;">
+        <summary style="background:var(--cream);color:var(--ink);">${st.num} · ${escapeHtml(st.title)} (${files.length})</summary>`;
+      files.forEach(a=>{
+        const canDelete = a.uploadedBy === getWho() || isAdmin();
+        const thumb = isImageFile(a.name)
+          ? `<img src="${a.url}" class="attach-thumb" data-file-preview data-url="${a.url}" data-name="${escapeHtml(a.name)}" alt="">`
+          : `<div class="attach-file-icon" data-file-preview data-url="${a.url}" data-name="${escapeHtml(a.name)}">📄</div>`;
+        html += `<div class="approver attachment-row" style="margin:0 14px 8px;">
+          ${thumb}
+          <div class="approver-name" data-file-preview data-url="${a.url}" data-name="${escapeHtml(a.name)}" style="cursor:pointer;">${escapeHtml(a.name)}
+            <div class="approver-stamp">${escapeHtml(a.uploadedBy)} · ${timeAgo(a.uploadedAt)}</div></div>
+          ${canDelete ? `<button class="remove-x" data-files-del="${site.id}|${st.id}|${a.path||''}|${a.uploadedAt}">✕</button>` : ''}
+        </div>`;
+      });
+      html += `</details>`;
+    });
+    html += `</details>`;
+  });
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-file-preview]').forEach(node=>{
+    node.onclick = ()=> openFilePreview(node.dataset.url, node.dataset.name);
+  });
+  el.querySelectorAll('[data-files-del]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const [siteId, stageIdStr, path, uploadedAtStr] = btn.dataset.filesDel.split('|');
+      const stageId = parseInt(stageIdStr);
+      const uploadedAt = parseFloat(uploadedAtStr);
+      const d = board.siteData[siteId].stageData[stageId];
+      const idx = d.attachments.findIndex(a => a.uploadedAt === uploadedAt && (a.path||'') === path);
+      if(idx === -1) return;
+      const att = d.attachments[idx];
+      if(!(att.uploadedBy === getWho() || isAdmin())) return;
+      if(!window.confirm(`Delete "${att.name}"? This can't be undone.`)) return;
+      try{ if(att.path) await storage.ref(att.path).delete(); }catch(e){ console.error('storage delete failed', e); }
+      d.attachments.splice(idx, 1);
+      await saveBoard(); render();
+    };
+  });
+}
+
+function renderCapexView(){
+  const el = document.getElementById('capexView');
+  if(!activeStore || !getSite(activeStore)){
+    el.innerHTML = `<div class="empty-note">No site selected.</div>`;
+    return;
+  }
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  const c = s.capex;
+  const visible = isCostVisible(s);
+
+  if(!visible){
+    el.innerHTML = `<div class="admin-section">
+      <h3>CapEx — ${escapeHtml(site.name)}</h3>
+      <div class="sub">Cost details for this site are restricted to people admin has added to the cost list.</div>
+      ${c.finalized ? `<div class="progress-line" style="font-weight:700;color:var(--done);">✓ Tentative CapEx Finalized</div>` : `<div class="progress-line">Tentative CapEx not yet finalized.</div>`}
+    </div>`;
+    return;
+  }
+
+  const tentTotal = c.lineItems.reduce((sum,li)=>sum + (parseFloat(li.qty)||0)*(parseFloat(li.tentativeRate)||0), 0);
+  const actualTotal = c.lineItems.reduce((sum,li)=>sum + (parseFloat(li.qty)||0)*(parseFloat(li.actualRate)||0), 0);
+  const iAmTentative = (findMyStakeholder()||{}).id && c.tentativeAssignees.includes(findMyStakeholder().id);
+  const iAmActual = (findMyStakeholder()||{}).id && c.actualAssignees.includes(findMyStakeholder().id);
+  const canEditTentative = (isAdmin() || iAmTentative) && !c.finalized;
+  const canEditActual = (isAdmin() || iAmActual) && c.finalized;
+
+  let html = `<div class="admin-section">
+    <h3>CapEx — ${escapeHtml(site.name)}</h3>
+    <div class="sub">${c.finalized ? '✓ Tentative CapEx finalized — actuals being reconciled below.' : 'Building the tentative CapEx. Finalize once all line items look right.'}</div>
+    <div style="display:flex;gap:16px;margin-top:10px;">
+      <div><div style="font-size:11px;color:var(--sub);">Tentative Total</div><div style="font-weight:700;font-size:16px;">${fmtINR(tentTotal)}</div></div>
+      <div><div style="font-size:11px;color:var(--sub);">Actual Total</div><div style="font-weight:700;font-size:16px;color:${actualTotal>tentTotal&&c.finalized?'var(--gate-ink)':'var(--done)'};">${c.finalized?fmtINR(actualTotal):'—'}</div></div>
+    </div>
+  </div>`;
+
+  if(isAdmin()){
+    html += `<div class="admin-section">
+      <h3>Assign people</h3>
+      <div class="sub">Anyone assigned here can see and edit this tab, regardless of the cost list below.</div>
+      <div class="field"><label>Tentative CapEx builder(s)</label>
+        ${board.stakeholders.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;">
+          <input type="checkbox" data-capex-tent-assignee="${p.id}" ${c.tentativeAssignees.includes(p.id)?'checked':''} style="width:auto;"> ${escapeHtml(p.name)}
+        </label>`).join('')}
+      </div>
+      <div class="field"><label>Actual cost updater(s)</label>
+        ${board.stakeholders.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;">
+          <input type="checkbox" data-capex-actual-assignee="${p.id}" ${c.actualAssignees.includes(p.id)?'checked':''} style="width:auto;"> ${escapeHtml(p.name)}
+        </label>`).join('')}
+      </div>
+      <div class="field"><label>Also give cost visibility to (beyond assignees above)</label>
+        ${board.stakeholders.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;">
+          <input type="checkbox" data-capex-visible="${p.id}" ${c.costVisibleTo.includes(p.id)?'checked':''} style="width:auto;"> ${escapeHtml(p.name)}
+        </label>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  html += `<div class="admin-section"><h3>Line Items</h3>`;
+  if(c.lineItems.length === 0){
+    html += `<div class="empty-note" style="padding:16px 0;">No line items yet.</div>`;
+  } else {
+    html += c.lineItems.map((li,i)=>{
+      const lineTent = (parseFloat(li.qty)||0)*(parseFloat(li.tentativeRate)||0);
+      const lineActual = (parseFloat(li.qty)||0)*(parseFloat(li.actualRate)||0);
+      const hasTent = hasTentativeRate(li);
+      return `<div class="mini-task-card">
+        <div class="mini-task-top"><div class="mini-task-label">${escapeHtml(li.name||'(unnamed)')}</div>
+          ${canEditTentative ? `<button class="remove-x" data-capex-del-item="${li.id}">✕</button>` : ''}
+        </div>
+        <div class="mini-task-row">
+          <div style="flex:1;"><label style="font-size:10px;color:var(--sub);">Quantity</label>
+            <input type="number" data-capex-field="${li.id}|qty" value="${escapeHtml(li.qty||'')}" ${canEditTentative?'':'disabled'}></div>
+          <div style="flex:1;"><label style="font-size:10px;color:var(--sub);">Tentative rate</label>
+            <input type="number" data-capex-field="${li.id}|tentativeRate" value="${escapeHtml(li.tentativeRate||'')}" ${canEditTentative?'':'disabled'}></div>
+        </div>
+        <div class="progress-line" style="margin:4px 0;">Tentative: ${fmtINR(lineTent)}</div>
+        ${c.finalized ? (hasTent ? `<div class="field"><label>Actual rate</label>
+          <input type="number" data-capex-field="${li.id}|actualRate" value="${escapeHtml(li.actualRate||'')}" ${canEditActual?'':'disabled'}></div>
+          <div class="progress-line" style="margin:4px 0;">Actual: ${li.actualRate?fmtINR(lineActual):'not recorded yet'}</div>`
+          : `<div class="mini-task-flag">No tentative rate was set — add one above before an actual cost can be recorded for this item.</div>`) : ''}
+      </div>`;
+    }).join('');
+  }
+  if(canEditTentative){
+    html += `<div class="field"><label>New line item name</label><input id="capexNewItemName" placeholder="e.g. Kitchen equipment"></div>
+      <div class="btn-row"><button class="btn ghost" id="capexAddItemBtn">Add line item</button></div>
+      <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+        <label>Bulk upload line items (CSV/Excel)</label>
+        <div class="progress-line" style="margin-top:0;">Columns: Item, Quantity, Tentative Rate</div>
+        <input type="file" id="capexBulkFile" accept=".csv,.xlsx,.xls">
+        <div class="btn-row"><button class="btn ghost" id="capexBulkBtn">Import line items</button></div>
+        <div id="capexBulkStatus" class="progress-line"></div>
+      </div>
+      <div class="btn-row"><button class="btn primary" id="capexFinalizeBtn">Finalize Tentative CapEx</button></div>`;
+  }
+  if(c.finalized && canEditActual){
+    html += `<div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+      <label>Update actual costs — bulk upload (CSV/Excel)</label>
+      <div class="progress-line" style="margin-top:0;">Columns: Item, Actual Rate — matched to existing line items by item name. Only items that already have a tentative rate will be updated; others are skipped and listed after import. To update one at a time instead, edit the "Actual rate" field on any line item above.</div>
+      <input type="file" id="capexActualBulkFile" accept=".csv,.xlsx,.xls">
+      <div class="btn-row"><button class="btn ghost" id="capexActualBulkBtn">Import actual costs</button></div>
+      <div id="capexActualBulkStatus" class="progress-line"></div>
+    </div>`;
+  }
+  html += `</div>`;
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-capex-tent-assignee]').forEach(chk=>{
+    chk.onchange = async ()=>{
+      const id = chk.dataset.capexTentAssignee;
+      if(chk.checked){ if(!c.tentativeAssignees.includes(id)) c.tentativeAssignees.push(id); }
+      else{ c.tentativeAssignees = c.tentativeAssignees.filter(x=>x!==id); }
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-capex-actual-assignee]').forEach(chk=>{
+    chk.onchange = async ()=>{
+      const id = chk.dataset.capexActualAssignee;
+      if(chk.checked){ if(!c.actualAssignees.includes(id)) c.actualAssignees.push(id); }
+      else{ c.actualAssignees = c.actualAssignees.filter(x=>x!==id); }
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-capex-visible]').forEach(chk=>{
+    chk.onchange = async ()=>{
+      const id = chk.dataset.capexVisible;
+      if(chk.checked){ if(!c.costVisibleTo.includes(id)) c.costVisibleTo.push(id); }
+      else{ c.costVisibleTo = c.costVisibleTo.filter(x=>x!==id); }
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-capex-field]').forEach(inp=>{
+    inp.onchange = async ()=>{
+      const [id, field] = inp.dataset.capexField.split('|');
+      const li = c.lineItems.find(x=>x.id===id);
+      if(!li) return;
+      li[field] = inp.value;
+      if(field === 'actualRate'){ li.actualBy = getWho(); li.actualAt = Date.now(); }
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-capex-del-item]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      if(!window.confirm('Remove this line item?')) return;
+      c.lineItems = c.lineItems.filter(x=>x.id!==btn.dataset.capexDelItem);
+      await saveBoard(); render();
+    };
+  });
+  const addItemBtn = document.getElementById('capexAddItemBtn');
+  if(addItemBtn) addItemBtn.onclick = async ()=>{
+    const name = document.getElementById('capexNewItemName').value.trim();
+    if(!name) return;
+    c.lineItems.push({ id: uid('li'), name, qty:'', tentativeRate:'', actualRate:'', actualBy:'', actualAt:0 });
+    await saveBoard(); render();
+  };
+  const capexBulkBtn = document.getElementById('capexBulkBtn');
+  if(capexBulkBtn) capexBulkBtn.onclick = async ()=>{
+    const file = document.getElementById('capexBulkFile').files[0];
+    const statusEl = document.getElementById('capexBulkStatus');
+    if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
+    try{
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+      let added = 0;
+      rows.forEach(row=>{
+        const name = String(row['Item']||'').trim();
+        if(!name) return;
+        c.lineItems.push({
+          id: uid('li'), name,
+          qty: String(row['Quantity']||''), tentativeRate: String(row['Tentative Rate']||''),
+          actualRate:'', actualBy:'', actualAt:0,
+        });
+        added++;
+      });
+      await saveBoard();
+      statusEl.textContent = `Imported ${added} line item(s).`;
+      render();
+    }catch(e){
+      statusEl.textContent = 'Import failed: ' + e.message;
+    }
+  };
+  const capexActualBulkBtn = document.getElementById('capexActualBulkBtn');
+  if(capexActualBulkBtn) capexActualBulkBtn.onclick = async ()=>{
+    const file = document.getElementById('capexActualBulkFile').files[0];
+    const statusEl = document.getElementById('capexActualBulkStatus');
+    if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
+    try{
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+      let matched = 0, unmatched = [], skippedNoTentative = [];
+      const who = getWho();
+      rows.forEach(row=>{
+        const name = String(row['Item']||'').trim();
+        const rate = String(row['Actual Rate']||'').trim();
+        if(!name || !rate) return;
+        const li = c.lineItems.find(x=>x.name.toLowerCase()===name.toLowerCase());
+        if(!li){ unmatched.push(name); return; }
+        if(!hasTentativeRate(li)){ skippedNoTentative.push(name); return; }
+        li.actualRate = rate; li.actualBy = who; li.actualAt = Date.now(); matched++;
+      });
+      await saveBoard();
+      let msg = `Updated ${matched} item(s).`;
+      if(skippedNoTentative.length) msg += ` Skipped (no tentative rate set): ${skippedNoTentative.join(', ')}.`;
+      if(unmatched.length) msg += ` No line item matched: ${unmatched.join(', ')}.`;
+      statusEl.textContent = msg;
+      render();
+    }catch(e){
+      statusEl.textContent = 'Import failed: ' + e.message;
+    }
+  };
+  const finalizeBtn = document.getElementById('capexFinalizeBtn');
+  if(finalizeBtn) finalizeBtn.onclick = async ()=>{
+    if(!window.confirm('Finalize the tentative CapEx? Line items lock for editing until actuals are reconciled.')) return;
+    c.finalized = true; c.finalizedBy = getWho(); c.finalizedAt = Date.now();
+    s.log.push({stageId:3, text:`Tentative CapEx finalized by ${getWho()}`, at: Date.now()});
+    await saveBoard(); render();
+  };
+}
+
+// Visibility rule: Admin sees everything. Drafts are creator-only. Live/closed projects
+// are visible to their creator plus anyone assigned to any stage or Post-LOI task in them.
+function canSeeSite(site){
+  if(isAdmin()) return true;
+  if(!currentUser) return false;
+  if(site.status === 'draft') return site.ownerId === currentUser.email;
+  if(site.ownerId === currentUser.email) return true;
+  const me = findMyStakeholder();
+  if(!me) return false;
+  const s = board.siteData[site.id];
+  if(!s) return false;
+  return STAGES.some(st=>{
+    const d = s.stageData[st.id];
+    if(!d) return false;
+    if((d.assignedTo||[]).includes(me.id)) return true;
+    if(st.id===11 && d.tasks){
+      return Object.values(d.tasks).some(t=>(t.assignedTo||[]).includes(me.id));
+    }
+    return false;
+  });
+}
+function visibleSites(){ return board.sites.filter(canSeeSite); }
+
+function renderTemplatesView(){
+  const el = document.getElementById('templatesView');
+  const me = currentUser ? currentUser.email : null;
+  let html = `<div class="admin-section">
+    <h3>Templates</h3>
+    <div class="sub">Every project starts from one of these. Pick one to create a new project — it starts as a private draft only you can see, until you publish it.</div>
+  </div>`;
+
+  board.templates.forEach(t=>{
+    const owner = t.ownerId ? (board.stakeholders.find(p=>p.email===t.ownerId)||{}).name || t.ownerId : null;
+    html += `<div class="admin-section">
+      <h3>${escapeHtml(t.name)}${t.builtIn?' <span class="admin-row-sub">(built-in)</span>':''}</h3>
+      <div class="sub">${escapeHtml(t.description||'')}</div>
+      ${owner ? `<div class="progress-line">Owned by ${escapeHtml(owner)}</div>` : ''}
+      <div class="field"><label>New project name</label><input id="newProjName_${t.id}" placeholder="e.g. Bangalore — Site 6"></div>
+      <div class="field"><label>City</label><select id="newProjCity_${t.id}">
+        ${board.cities.map(c=>`<option value="${c.code}">${escapeHtml(c.name)}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Format</label><select id="newProjFormat_${t.id}">
+        ${Object.keys(FORMATS).map(f=>`<option value="${f}">${escapeHtml(FORMATS[f].label)}</option>`).join('')}
+      </select></div>
+      <div class="btn-row"><button class="btn primary" data-create-project="${t.id}">Create Draft</button></div>
+    </div>`;
+  });
+
+  const myDrafts = board.sites.filter(s=>s.status==='draft' && s.ownerId===me);
+  html += `<div class="admin-section"><h3>Your Drafts</h3>
+    <div class="sub">Only you can see these until you publish — publishing makes them visible to whoever gets assigned.</div>`;
+  if(myDrafts.length === 0){
+    html += `<div class="empty-note">No drafts right now.</div>`;
+  } else {
+    html += myDrafts.map(s=>`
+      <div class="admin-row">
+        <div class="admin-row-main">${escapeHtml(s.name)}</div>
+        <button class="btn ghost" data-publish-draft="${s.id}" style="width:auto;">Publish</button>
+      </div>`).join('');
+  }
+  html += `</div>`;
+
+  if(isDeveloper()){
+    const mySites = visibleSites();
+    html += `<div class="admin-section">
+      <h3>Save a Project as a New Template</h3>
+      <div class="sub">Creates a new, reusable template entry from a project's basic info — Developer-only. This doesn't yet let you redesign its stage structure; that's a future capability, not built yet.</div>
+      <div class="field"><label>Project</label><select id="saveTemplateSiteSelect">
+        ${mySites.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>New template name</label><input id="saveTemplateName" placeholder="e.g. QSR Kiosk Opening"></div>
+      <div class="field"><label>Description</label><input id="saveTemplateDesc" placeholder="What kind of project is this for?"></div>
+      <div class="btn-row"><button class="btn primary" id="saveAsTemplateBtn">Save as Template</button></div>
+    </div>`;
+
+    const myTemplates = board.templates.filter(t=>t.ownerId===me);
+    if(myTemplates.length){
+      html += `<div class="admin-section"><h3>Templates You Own</h3>
+        <div class="sub">Transfer ownership to another Developer if you're moving off this.</div>`;
+      myTemplates.forEach(t=>{
+        html += `<div class="admin-row" style="flex-wrap:wrap;">
+          <div style="flex:1 1 100%;"><div class="admin-row-main">${escapeHtml(t.name)}</div></div>
+          <select data-transfer-template="${t.id}" style="width:auto;font-size:11px;">
+            <option value="">— transfer to —</option>
+            ${board.developerEmails.filter(e=>e!==me).map(e=>`<option value="${e}">${escapeHtml(e)}</option>`).join('')}
+          </select>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+  }
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-create-project]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const tid = btn.dataset.createProject;
+      const name = document.getElementById(`newProjName_${tid}`).value.trim();
+      const city = document.getElementById(`newProjCity_${tid}`).value;
+      const format = document.getElementById(`newProjFormat_${tid}`).value;
+      if(!name) return;
+      const id = uid('site');
+      const newSite = { id, name, city, format, templateId: tid, status:'draft', ownerId: me };
+      board.sites.push(newSite);
+      board.siteData[id] = makeSiteData(newSite);
+      await saveBoard();
+      activeStore = id;
+      render();
+    };
+  });
+  el.querySelectorAll('[data-publish-draft]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const site = getSite(btn.dataset.publishDraft);
+      if(!site) return;
+      site.status = 'live';
+      await saveBoard();
+      render();
+    };
+  });
+  const saveTemplateBtn = document.getElementById('saveAsTemplateBtn');
+  if(saveTemplateBtn) saveTemplateBtn.onclick = async ()=>{
+    const name = document.getElementById('saveTemplateName').value.trim();
+    const desc = document.getElementById('saveTemplateDesc').value.trim();
+    if(!name) return;
+    board.templates.push({ id: uid('tmpl'), name, description: desc, builtIn:false, ownerId: me, createdAt: Date.now() });
+    await saveBoard();
+    render();
+  };
+  el.querySelectorAll('[data-transfer-template]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      if(!sel.value) return;
+      const t = board.templates.find(x=>x.id===sel.dataset.transferTemplate);
+      if(t) t.ownerId = sel.value;
+      await saveBoard(); render();
+    };
+  });
+}
+
+function renderTabs(){
+  const el = document.getElementById('storeTabs');
+  const sites = visibleSites();
+  if(sites.length === 0){ el.innerHTML=''; return; }
+  el.innerHTML = sites.map(site=>{
+    const st = storeState(site.id);
+    const curStage = STAGES.find(x=>x.id===st.current);
+    const curD = st.stageData[st.current];
+    const curT = curStage ? stageTiming(curStage, curD) : null;
+    let pipColor = 'var(--active)';
+    if(curStage && curStage.type==='approval') pipColor = 'var(--appr-ink)';
+    if(curStage && curStage.type==='gate') pipColor = 'var(--gate-ink)';
+    if(st.stageData[11] && st.stageData[11].status==='done') pipColor = 'var(--done)';
+    if(curT && curT.isOverdue) pipColor = '#C13E3E';
+    return `<button class="store-tab ${site.id===activeStore?'active':''}" data-s="${site.id}">
+      <span class="pip" style="background:${site.id===activeStore?'#fff':pipColor}"></span>${escapeHtml(site.name.replace(' — ',' · '))}
+    </button>`;
+  }).join('');
+  el.querySelectorAll('.store-tab').forEach(b=>{
+    b.onclick = ()=>{ activeStore = b.dataset.s; render(); };
+  });
+}
+
+function renderSummary(){
+  if(!activeStore || !getSite(activeStore)){ document.getElementById('storeSummary').innerHTML=''; return; }
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  const curStage = STAGES.find(x=>x.id===s.current);
+  const doneFinal = s.stageData[11].status === 'done';
+  const el = document.getElementById('storeSummary');
+  let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `Stage ${curStage.num} — ${curStage.title}` : '';
+  if(s.projectClosed){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Project Closed'; }
+  else if(doneFinal){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Store opened'; }
+  else if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
+  else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
+  // Flexible mode: work on a later stage can complete while an earlier one is still open —
+  // make that visible instead of hiding it behind a single "current stage" label.
+  let doneAheadNote = '';
+  if(!doneFinal && curStage){
+    const doneAhead = STAGES.filter(st=>st.id > s.current && s.stageData[st.id] && s.stageData[st.id].status === 'done');
+    if(doneAhead.length){
+      label = `Blocked on ${curStage.num} — ${curStage.title}`;
+      doneAheadNote = `${doneAhead.length} stage${doneAhead.length>1?'s':''} ahead already done (${doneAhead.map(x=>x.num).join(', ')})`;
+    }
+  }
+  const opening = computeTargetOpening(s);
+  const targetText = opening ? `${opening.label} ${fmtDate(opening.value)}` : 'target TBD — pending construction start';
+  const commentCount = (s.comments || []).length;
+  const showCloseBtn = isAdmin() && doneFinal && !s.projectClosed;
+  el.innerHTML = `
+    <div>
+      <div class="name">${escapeHtml(site.name)}</div>
+      <div class="city">${escapeHtml(FORMATS[site.format].label)} · ${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)} · ${targetText}</div>
+      ${doneAheadNote ? `<div class="city" style="color:var(--done);">${doneAheadNote}</div>` : ''}
+      ${s.projectClosed ? `<div class="city" style="color:var(--done);">Closed by ${escapeHtml(s.closedBy)} · ${fmtDate(s.closedAt)}</div>` : ''}
+      ${s.projectClosed && s.closureOverride ? `<div class="city" style="color:var(--gate-ink);">⚠ Closed with pending CapEx — override by ${escapeHtml(s.closureOverride.by)}: "${escapeHtml(s.closureOverride.reason)}"</div>` : ''}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="switch-link" id="viewCommentsBtn" style="font-size:11px;">💬 ${commentCount}</button>
+      <div class="stage-pill" style="background:${pillBg};color:${pillInk};">${label}</div>
+    </div>
+  `;
+  document.getElementById('viewCommentsBtn').onclick = openCommentsPanel;
+
+  const oldRow = document.getElementById('closeProjectRow');
+  if(oldRow) oldRow.remove();
+  if(showCloseBtn){
+    const capexOk = capexActualsComplete(s);
+    el.insertAdjacentHTML('afterend', `<div id="closeProjectRow" style="padding:0 14px 12px;">
+      ${!capexOk ? `<div class="warn" style="margin-bottom:8px;">⚠ Not all CapEx actual costs are recorded yet.</div>` : ''}
+      <button class="btn primary" id="closeProjectBtn" style="width:100%;">Close Project</button>
+    </div>`);
+    document.getElementById('closeProjectBtn').onclick = async ()=>{
+      if(capexOk){
+        if(!window.confirm(`Close ${site.name}? All snags are signed off and every stage is complete. This marks the project as formally closed.`)) return;
+      } else {
+        const reason = window.prompt(`Not all CapEx actual costs are recorded for ${site.name}. Enter a reason to close anyway — this will be logged:`);
+        if(!reason) return;
+        s.closureOverride = { by: getWho(), at: Date.now(), reason };
+      }
+      s.projectClosed = true;
+      s.closedBy = getWho();
+      s.closedAt = Date.now();
+      await saveBoard();
+      render();
+    };
+  }
+}
+
+function openCommentsPanel(){
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  const comments = (s.comments || []).slice().sort((a,b)=>b.at-a.at);
+  const body = document.getElementById('sheetBody');
+  body.innerHTML = `
+    <h2>Comments — ${escapeHtml(site.name)}</h2>
+    <div class="meta">Replies to this site's email thread show up here automatically.</div>
+    ${comments.length ? `<div class="log" style="max-height:none;">` + comments.map(c=>
+      `<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed var(--line);">
+        <div style="font-size:12.5px;color:var(--ink);white-space:pre-wrap;">${escapeAndLinkify(c.body)}</div>
+        <div style="font-size:11px;color:var(--sub);margin-top:4px;">${escapeHtml(c.from)} · ${timeAgo(c.at)}${c.source==='email'?' · via email':''}</div>
+      </div>`
+    ).join('') + `</div>` : `<div class="progress-line">No comments yet.</div>`}
+    <div class="btn-row"><button class="btn primary" id="closeBtn">Close</button></div>
+  `;
+  document.getElementById('sheetBackdrop').classList.add('open');
+  document.getElementById('closeBtn').onclick = closeSheet;
+}
+
+function renderFlow(){
+  const el = document.getElementById('flow');
+  if(!activeStore || board.sites.length === 0){
+    el.className = '';
+    el.innerHTML = `<div class="empty-note">No sites yet. Go to <b>Admin</b> to add the first site — its tracker starts the moment you add it.</div>`;
+    return;
+  }
+  recompute(activeStore);
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  el.className = '';
+  let html = '';
+
+  const overdueStages = STAGES.filter(st=>{
+    const d = s.stageData[st.id];
+    const t = stageTiming(st, d);
+    return t && t.isOverdue;
+  });
+  if(overdueStages.length){
+    html += `<div class="delay-banner">` + overdueStages.map(st=>{
+      const d = s.stageData[st.id];
+      const t = stageTiming(st, d);
+      const reasonBit = d.delayReason
+        ? `Reason logged: "${escapeAndLinkify(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}`
+        : `No reason logged yet — tap the stage to log one.`;
+      return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${t.sla}d SLA. ${reasonBit}</div>`;
+    }).join('') + `</div>`;
+  }
+
+  html += '<div class="rail-line"></div>';
+  STAGES.forEach(st=>{
+    const d = s.stageData[st.id];
+    if(d.status === 'skip'){
+      html += `<div class="stage-row"><div class="stage-dot">–</div>
+        <div class="stage-card skip"><div class="stage-title">${st.num} · ${escapeHtml(st.title)}</div>
+        <div class="stage-owner">Not applicable — Chennai</div></div></div>`;
+      return;
+    }
+    const t = stageTiming(st, d);
+    let dotCls = d.status;
+    if(t && t.isOverdue) dotCls = 'overdue';
+    let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : (t && t.isOverdue ? '!' : st.num));
+    let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back'}[d.status];
+    let slaBit = `SLA ${effectiveSla('stage_'+st.id, st.slaDays)}d`;
+    if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over SLA` : `Day ${t.elapsedDays} of ${t.sla}d SLA`;
+    let ownerText = st.owner;
+    if(st.id === 2) ownerText = st.owner + ` · target ${FORMATS[site.format].sizeText}`;
+    const assignedNames = (d.assignedTo||[]).map(id=>{
+      const p = board.stakeholders.find(x=>x.id===id);
+      return p ? p.name : null;
+    }).filter(Boolean);
+    if(assignedNames.length) ownerText = `Assigned: ${assignedNames.join(', ')}`;
+    html += `<div class="stage-row" data-stage="${st.id}">
+      <div class="stage-dot ${dotCls}">${dotContent}</div>
+      <div class="stage-card ${d.status} ${t&&t.isOverdue?'overdue-card':''}">
+        <div class="stage-top">
+          <div>
+            <span class="stage-badge ${st.type}">${st.type}</span>
+            <div class="stage-title">${st.num} · ${escapeHtml(st.title)}</div>
+          </div>
+          <div class="stage-dur ${t&&t.isOverdue?'overdue-dur':''}">${slaBit}</div>
+        </div>
+        <div class="stage-owner">${escapeHtml(ownerText)}</div>
+        <div class="stage-status ${t&&t.isOverdue?'overdue':d.status}">${statusLabel}${d.updatedBy ? ' · '+escapeHtml(d.updatedBy)+' · '+timeAgo(d.updatedAt) : ''}</div>
+      </div>
+    </div>`;
+    if(d.status === 'declined' && st.reworkTo){
+      html += `<div class="restart-note">↩ restarted to Stage ${STAGES.find(x=>x.id===st.reworkTo).num} — ${escapeHtml(STAGES.find(x=>x.id===st.reworkTo).title)}</div>`;
+    }
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('.stage-row[data-stage]').forEach(row=>{
+    row.onclick = ()=> openSheet(parseInt(row.dataset.stage));
+  });
+}
+
+function openSheet(stageId){
+  const st = STAGES.find(x=>x.id===stageId);
+  const s = storeState(activeStore);
+  const site = getSite(activeStore);
+  const d = s.stageData[stageId];
+  const backdrop = document.getElementById('sheetBackdrop');
+  const body = document.getElementById('sheetBody');
+
+  let inner = `
+    <span class="stage-badge ${st.type} sheet-badge">${st.type}</span>
+    <h2>${st.num} · ${escapeHtml(st.title)}</h2>
+    <div class="meta">${escapeHtml(st.owner)} · ${st.duration}</div>
+    <div class="desc">${escapeHtml(st.desc)}${st.id===2 ? ` Preferred size for this site: <b>${FORMATS[site.format].sizeText}</b> (${FORMATS[site.format].label}).` : ''}</div>
+  `;
+  const myStakeholder = findMyStakeholder();
+  const myId = myStakeholder ? myStakeholder.id : null;
+  const assignedIds = d.assignedTo || [];
+  const assignedList = assignedIds.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
+
+  inner += `<div class="field"><label>Assigned to</label>`;
+  if(assignedList.length){
+    inner += `<div class="approver-list">` + assignedList.map(p=>`
+      <div class="approver">
+        <div class="approver-name">${escapeHtml(stakeholderLabel(p))}</div>
+        ${isAdmin() ? `<button class="remove-x" data-remove-assignee="${p.id}">✕</button>` : ''}
+      </div>`).join('') + `</div>`;
+  } else {
+    inner += `<div class="progress-line">Nobody assigned yet.</div>`;
+  }
+  if(isAdmin()){
+    inner += `<select id="stageAssignAdd"><option value="">+ add someone</option>
+      ${board.stakeholders.filter(p=>!assignedIds.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(stakeholderLabel(p))}</option>`).join('')}
+    </select>`;
+  }
+  inner += `</div>`;
+  if(myId && assignedIds.includes(myId)){
+    inner += `<div class="field"><label>Transfer my part to</label>
+      <select id="stageTransferTo"><option value="">— select someone —</option>
+        ${board.stakeholders.filter(p=>p.id!==myId).map(p=>`<option value="${p.id}">${escapeHtml(stakeholderLabel(p))}</option>`).join('')}
+      </select></div>
+      <div class="btn-row"><button class="btn decline" id="stageTransferBtn">Transfer my part</button></div>`;
+  }
+  if(st.warning) inner += `<div class="warn">⚠ ${escapeHtml(st.warning)}</div>`;
+
+  const t = stageTiming(st, d);
+  if(t){
+    inner += `<div class="meta" style="margin-top:-6px;">Day ${t.elapsedDays} of ${t.sla}d SLA${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
+  }
+  if(t && t.isOverdue){
+    inner += `<div class="warn">⚠ This stage is ${t.overdueDays} day(s) past its SLA.
+      ${d.delayReason ? `Reason logged: "${escapeAndLinkify(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}, ${timeAgo(d.delayLoggedAt)}` : ''}
+    </div>`;
+    inner += `<div class="field"><label>${d.delayReason?'Update delay reason':'Log reason for delay'}</label>
+      <textarea id="delayReasonField" placeholder="e.g. landlord unresponsive, awaiting legal docs...">${escapeHtml(d.delayReason||'')}</textarea></div>
+      <div class="btn-row"><button class="btn decline" id="logDelayBtn">Log delay</button></div>`;
+  }
+
+  d.attachments = d.attachments || [];
+  inner += `<h3 style="font-family:'Inter',sans-serif;font-size:14px;margin:16px 0 6px;">Attachments</h3>`;
+  if(d.attachments.length){
+    inner += `<div class="approver-list">` + d.attachments.map((a,i)=>{
+      const canDelete = a.uploadedBy === getWho() || isAdmin();
+      const thumb = isImageFile(a.name)
+        ? `<img src="${a.url}" class="attach-thumb" data-preview="${i}" alt="">`
+        : `<div class="attach-file-icon" data-preview="${i}">📄</div>`;
+      return `<div class="approver attachment-row">
+        ${thumb}
+        <div class="approver-name" data-preview="${i}" style="cursor:pointer;">${escapeHtml(a.name)}
+          <div class="approver-stamp">${escapeHtml(a.uploadedBy)} · ${timeAgo(a.uploadedAt)}</div></div>
+        ${canDelete ? `<button class="remove-x" data-del-attachment="${i}">✕</button>` : ''}
+      </div>`;
+    }).join('') + `</div>`;
+  } else {
+    inner += `<div class="progress-line">No files yet.</div>`;
+  }
+  inner += `<div class="field"><input id="attachmentFile" type="file"></div>
+    <div class="progress-line" style="margin-top:0;">Files over 25MB will still upload here, but won't be attached to the email trail — the update email will just link back to the project instead.</div>
+    <div class="btn-row"><button class="btn ghost" id="uploadAttachmentBtn">Upload</button></div>
+    <div id="uploadStatus" class="progress-line"></div>`;
+
+  d.blockerFlags = d.blockerFlags || [];
+  inner += `<h3 style="font-family:'Inter',sans-serif;font-size:14px;margin:16px 0 6px;">Flag a blocker</h3>
+    <div class="progress-line" style="margin-top:0;">Stuck because of someone else's work? Name them and it'll notify them and their manager.</div>
+    <div class="field"><label>Who is blocking you?</label>
+      <select id="blockerPerson">
+        <option value="">— select —</option>
+        ${board.stakeholders.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Notes</label><textarea id="blockerNote" placeholder="e.g. waiting on sign-off, they're on leave this week"></textarea></div>
+    <div class="btn-row"><button class="btn decline" id="flagBlockerBtn">Flag blocker</button></div>`;
+  if(d.blockerFlags.length){
+    inner += `<div class="log">` + d.blockerFlags.slice(-5).reverse().map(b=>{
+      const person = board.stakeholders.find(p=>p.id===b.personId);
+      return `Blocked by ${person ? escapeHtml(person.name) : 'someone'}: "${escapeAndLinkify(b.note)}" — flagged by ${escapeHtml(b.by)}, ${timeAgo(b.at)}`;
+    }).join('<br>') + `</div>`;
+  }
+
+  if(st.type === 'approval'){
+    d.approvals = d.approvals || {};
+    const panel = board.approvalPanel.map(id=>board.stakeholders.find(x=>x.id===id)).filter(Boolean);
+    const approvedCount = panel.filter(p=>d.approvals[p.id]).length;
+    if(panel.length < 5){
+      inner += `<div class="warn">⚠ Only ${panel.length}/5 seats filled on the approval panel. Assign all 5 in Admin.</div>`;
+    }
+    inner += `<div class="approver-list">` + panel.map(p=>{
+      const rec = d.approvals[p.id];
+      return `<div class="approver">
+        <div class="approver-name">${escapeHtml(p.name)} <span class="level-badge">${levelLabel(p.level)}</span>
+          ${rec ? `<div class="approver-stamp">✓ confirmed by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}</div>
+        <div class="check ${rec?'on':''}" data-approver="${p.id}">${rec?'✓':''}</div>
+      </div>`;
+    }).join('') + `</div>
+    <div class="progress-line">${approvedCount} / ${panel.length} signed off${d.status==='done' ? ' — all approved' : ''}</div>`;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn decline" id="declineBtn">Decline — send back</button>
+        <button class="btn primary" id="closeBtn">Close</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  } else if(st.id === 3){
+    d.financials = d.financials || { capex:'', m1Revenue:'', monthlyGrowthPct:'', y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+    const f = d.financials;
+    inner += `<div class="info-box">${s.capex && s.capex.finalized ? '✓ Tentative CapEx Finalized — see the CapEx tab for full detail (cost-list only).' : 'Tentative CapEx not yet finalized — see the CapEx tab.'}</div>`;
+    inner += `
+      <div class="field"><label>CAPEX — one-time investment (₹)</label><input id="fx_capex" type="number" value="${f.capex}" placeholder="e.g. 6000000"></div>
+      <div class="field"><label>Month 1 revenue (₹)</label><input id="fx_m1" type="number" value="${f.m1Revenue}" placeholder="e.g. 800000"></div>
+      <div class="field"><label>Monthly growth, months 2–12 (%)</label><input id="fx_mg" type="number" value="${f.monthlyGrowthPct}" placeholder="e.g. 6"></div>
+      <div class="field"><label>Year 2 step-up (%)</label><input id="fx_y2" type="number" value="${f.y2GrowthPct}" placeholder="e.g. 15"></div>
+      <div class="field"><label>Year 3 step-up (%)</label><input id="fx_y3" type="number" value="${f.y3GrowthPct}" placeholder="e.g. 12"></div>
+      <div class="field"><label>COGS (% of revenue)</label><input id="fx_cogs" type="number" value="${f.cogsPct}" placeholder="e.g. 32"></div>
+      <div class="field"><label>Fixed monthly opex — rent, staff, utilities (₹)</label><input id="fx_opex" type="number" value="${f.fixedOpex}" placeholder="e.g. 450000"></div>
+      <div class="btn-row"><button class="btn ghost" id="calcBtn">Calculate</button></div>
+      <div id="fxResults"></div>
+      <div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>
+    `;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn ghost" id="saveNotesBtn">Save only</button>
+        <button class="btn primary" id="completeBtn">Save &amp; mark complete</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  } else if(st.type === 'gate'){
+    inner += `<div class="progress-line">${d.status==='done' ? 'Confirmed by landlord' : 'Awaiting written confirmation'}</div>`;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn decline" id="declineBtn">Not confirmed — send back</button>
+        <button class="btn primary" id="confirmBtn">Confirm load received</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  } else if(st.type === 'checklist'){
+    d.tasks = d.tasks || {}; d.design = d.design || {}; d.delivery = d.delivery || {}; d.finalStage = d.finalStage || {};
+    const doneCount = STAGE11_TASKS.filter(item=>d.tasks[item.key] && d.tasks[item.key].done).length;
+    const missingDateCount = STAGE11_TASKS.filter(item=>d.tasks[item.key] && d.tasks[item.key].done && !d.tasks[item.key].actualDate).length;
+    const overPlanCount = STAGE11_TASKS.filter(item=>{
+      const rec = d.tasks[item.key];
+      if(!rec || !rec.tentativeStart || !rec.tentativeEnd) return false;
+      const sla = effectiveSla('task_'+item.key, item.slaDays);
+      const plannedDays = Math.round((new Date(rec.tentativeEnd) - new Date(rec.tentativeStart)) / 86400000);
+      return plannedDays > sla;
+    }).length;
+
+    inner += `<div class="progress-line" style="font-weight:700;color:var(--ink);">${doneCount} / ${STAGE11_TASKS.length} execution tasks complete</div>`;
+    if(missingDateCount > 0){
+      inner += `<div class="warn">⚠ ${missingDateCount} completed task${missingDateCount>1?'s':''} missing an actual completion date — project team should record the real date, not just tick the box.</div>`;
+    }
+    if(overPlanCount > 0){
+      inner += `<div class="warn">⚠ ${overPlanCount} task${overPlanCount>1?'s have':' has'} a planned duration (tentative start to end) longer than its admin-set SLA.</div>`;
+    }
+
+    inner += `<details class="collapse-group" open>
+      <summary>Execution Tasks (${STAGE11_TASKS.length})</summary>`;
+    STAGE11_TASKS.forEach(item=>{
+      const rec = d.tasks[item.key] || { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
+      const sla = effectiveSla('task_'+item.key, item.slaDays);
+      const it = itemTiming(d.startedAt, item.slaDays, item.key);
+      const slaLabel = it ? (it.isOverdue ? `${it.overdueDays}d over ${sla}d SLA` : `Day ${it.elapsedDays} of ${sla}d SLA`) : `${sla}d SLA`;
+      const missingDate = rec.done && !rec.actualDate;
+      let plannedDays = null;
+      if(rec.tentativeStart && rec.tentativeEnd){
+        plannedDays = Math.round((new Date(rec.tentativeEnd) - new Date(rec.tentativeStart)) / 86400000);
+      }
+      const overPlan = plannedDays !== null && plannedDays > sla;
+      inner += `<div class="mini-task-card ${rec.done?'done':''} ${(it&&it.isOverdue&&!rec.done)||overPlan?'overdue-card':''}">
+        <div class="mini-task-top">
+          <div class="mini-task-label">${escapeHtml(item.label)}</div>
+          <div class="mini-task-sla ${it&&it.isOverdue?'overdue-dur':''}">${slaLabel}</div>
+        </div>
+        <div class="field" style="margin-top:8px;"><label>Assigned to</label>
+          ${(()=>{
+            const myId2 = (findMyStakeholder()||{}).id;
+            const ids = rec.assignedTo || [];
+            const list = ids.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
+            let html = list.length ? list.map(p=>`
+              <div class="approver" style="padding:5px 0;">
+                <div class="approver-name" style="font-size:12px;">${escapeHtml(p.name)}</div>
+                ${isAdmin() ? `<button class="remove-x" data-task-remove-assignee="${item.key}|${p.id}">✕</button>` : ''}
+              </div>`).join('') : `<div class="progress-line" style="margin:4px 0;">Nobody assigned yet.</div>`;
+            if(isAdmin()){
+              html += `<select data-task-assign-add="${item.key}"><option value="">+ add someone</option>
+                ${board.stakeholders.filter(p=>!ids.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+              </select>`;
+            }
+            if(myId2 && ids.includes(myId2)){
+              html += `<select data-task-transfer-to="${item.key}" style="margin-top:6px;"><option value="">— transfer my part to —</option>
+                ${board.stakeholders.filter(p=>p.id!==myId2).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+              </select>
+              <button type="button" class="btn ghost" data-task-transfer-btn="${item.key}" style="margin-top:4px;width:100%;">Transfer</button>`;
+            }
+            return html;
+          })()}
+        </div>
+        <div class="mini-task-row">
+          <div style="flex:1;min-width:130px;">
+            <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Tentative start</label>
+            ${dateFieldWithClear(`task_tstart_${item.key}`, rec.tentativeStart)}
+          </div>
+          <div style="flex:1;min-width:130px;">
+            <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Tentative end</label>
+            ${dateFieldWithClear(`task_tend_${item.key}`, rec.tentativeEnd)}
+          </div>
+        </div>
+        ${overPlan ? `<div class="mini-task-flag">⚠ Planned ${plannedDays}d — exceeds ${sla}d SLA by ${plannedDays-sla}d</div>` : ''}
+        <div class="mini-task-row">
+          <label class="mini-task-check"><input type="checkbox" data-task-done="${item.key}" ${rec.done?'checked':''}> Complete</label>
+          <div style="flex:1;">${dateFieldWithClear(`task_actual_${item.key}`, rec.actualDate)}</div>
+        </div>
+        ${missingDate ? `<div class="mini-task-flag">⚠ No date recorded</div>` : ''}
+        ${rec.done ? `<div class="approver-stamp">${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}
+      </div>`;
+    });
+    inner += `</details>`;
+
+    inner += `<details class="collapse-group">
+      <summary>Design Details (${STAGE11_DESIGN.length})</summary>
+      <div class="progress-line" style="margin-top:0;">One-time specs — no SLA</div>`;
+    STAGE11_DESIGN.forEach(f=>{
+      if(f.dateTriplet){
+        inner += renderDateTriplet('dsn', f.key, f.label, d.design[f.key]);
+      } else {
+        inner += `<div class="field"><label>${escapeHtml(f.label)}</label><input id="dsn_${f.key}" type="${f.type||'text'}" value="${escapeHtml(d.design[f.key]||'')}"></div>`;
+      }
+    });
+    inner += `</details>`;
+
+    inner += `<details class="collapse-group">
+      <summary>Equipment Delivery Schedule (${STAGE11_DELIVERY.length})</summary>
+      <div class="progress-line" style="margin-top:0;">No SLA — tracked as tentative start / delivery date / actual date</div>`;
+    STAGE11_DELIVERY.forEach(f=>{
+      inner += renderDateTriplet('dlv', f.key, f.label, d.delivery[f.key]);
+    });
+    inner += `</details>`;
+
+    inner += `<details class="collapse-group">
+      <summary>Final Stage (${STAGE11_FINAL.length})</summary>`;
+    STAGE11_FINAL.forEach(f=>{
+      if(f.dateTriplet){
+        inner += renderDateTriplet('fin', f.key, f.label, d.finalStage[f.key]);
+      } else {
+        inner += `<div class="field"><label>${escapeHtml(f.label)}</label><input id="fin_${f.key}" type="${f.type||'text'}" value="${escapeHtml(d.finalStage[f.key]||'')}"></div>`;
+      }
+    });
+    inner += `</details>`;
+
+    inner += `<div class="btn-row"><button class="btn primary" id="saveChecklistBtn">Save details</button></div>`;
+    if(d.status === 'done'){
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  } else {
+    inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn ghost" id="saveNotesBtn">Save notes</button>
+        <button class="btn primary" id="completeBtn">Mark complete</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
+  }
+
+  if(s.log.filter(l=>l.stageId===stageId).length){
+    inner += `<div class="log">` + s.log.filter(l=>l.stageId===stageId).slice(-5).reverse().map(l=>`${escapeHtml(l.text)} — ${timeAgo(l.at)}`).join('<br>') + `</div>`;
+  }
+
+  body.innerHTML = inner;
+  backdrop.classList.add('open');
+  wireSheetActions(st, s, d);
+  if(st.id === 3) renderFxResults(d.financials);
+}
+
+function readFxInputs(){
+  return {
+    capex: document.getElementById('fx_capex').value,
+    m1Revenue: document.getElementById('fx_m1').value,
+    monthlyGrowthPct: document.getElementById('fx_mg').value,
+    y2GrowthPct: document.getElementById('fx_y2').value,
+    y3GrowthPct: document.getElementById('fx_y3').value,
+    cogsPct: document.getElementById('fx_cogs').value,
+    fixedOpex: document.getElementById('fx_opex').value,
+  };
+}
+function renderFxResults(f){
+  const el = document.getElementById('fxResults');
+  if(!el) return;
+  if(!(f.capex && f.m1Revenue)){
+    el.innerHTML = `<div class="progress-line">Fill in CAPEX and Month 1 revenue, then Calculate.</div>`;
+    return;
+  }
+  const r = calcProjection(f);
+  el.innerHTML = `
+    <div class="progress-line" style="font-size:13px;font-weight:700;color:var(--ink);margin-top:14px;">
+      Payback: ${r.paybackMonth ? r.paybackMonth+' months' : 'beyond 36 months'} · 3-Yr ROI: ${r.roi3yr.toFixed(0)}%
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;">
+      <tr style="color:var(--sub);text-align:left;"><th style="padding:4px 0;">Year</th><th>Revenue</th><th>EBITDA</th></tr>
+      ${r.y.map((yy,i)=>`<tr style="border-top:1px solid var(--line);">
+        <td style="padding:5px 0;font-weight:600;">Y${i+1}</td><td>${fmtINR(yy.rev)}</td><td>${fmtINR(yy.ebitda)}</td>
+      </tr>`).join('')}
+      <tr style="border-top:1px solid var(--line);font-weight:700;">
+        <td style="padding:5px 0;">Total</td><td>${fmtINR(r.y[0].rev+r.y[1].rev+r.y[2].rev)}</td><td>${fmtINR(r.totalEBITDA)}</td>
+      </tr>
+    </table>
+  `;
+}
+
+function wireSheetActions(st, s, d){
+  const closeBtn = document.getElementById('closeBtn');
+  if(closeBtn) closeBtn.onclick = closeSheet;
+
+  const addSel = document.getElementById('stageAssignAdd');
+  if(addSel) addSel.onchange = async ()=>{
+    if(!addSel.value) return;
+    d.assignedTo = d.assignedTo || [];
+    if(!d.assignedTo.includes(addSel.value)) d.assignedTo.push(addSel.value);
+    d.updatedBy = getWho(); d.updatedAt = Date.now();
+    await saveBoard(); render(); openSheet(st.id);
+  };
+  document.querySelectorAll('[data-remove-assignee]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      d.assignedTo = (d.assignedTo||[]).filter(x=>x!==btn.dataset.removeAssignee);
+      d.updatedBy = getWho(); d.updatedAt = Date.now();
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+  const transferBtn = document.getElementById('stageTransferBtn');
+  if(transferBtn) transferBtn.onclick = async ()=>{
+    const newId = document.getElementById('stageTransferTo').value;
+    if(!newId) return;
+    const myId = (findMyStakeholder()||{}).id;
+    const oldPerson = board.stakeholders.find(p=>p.id===myId);
+    const newPerson = board.stakeholders.find(p=>p.id===newId);
+    d.assignedTo = (d.assignedTo||[]).filter(x=>x!==myId);
+    if(!d.assignedTo.includes(newId)) d.assignedTo.push(newId);
+    d.updatedBy = getWho(); d.updatedAt = Date.now();
+    s.log.push({stageId:st.id, text:`${oldPerson?oldPerson.name:getWho()} transferred their part to ${newPerson?newPerson.name:'someone'}`, at: Date.now()});
+    await saveBoard(); render(); openSheet(st.id);
+  };
+
+  const flagBlockerBtn = document.getElementById('flagBlockerBtn');
+  if(flagBlockerBtn) flagBlockerBtn.onclick = async ()=>{
+    const personId = document.getElementById('blockerPerson').value;
+    const note = document.getElementById('blockerNote').value.trim();
+    if(!personId || !note){
+      if(!personId) document.getElementById('blockerPerson').focus();
+      else document.getElementById('blockerNote').focus();
+      return;
+    }
+    const who = getWho();
+    d.blockerFlags = d.blockerFlags || [];
+    d.blockerFlags.push({ personId, note, by: who, at: Date.now() });
+    const person = board.stakeholders.find(p=>p.id===personId);
+    s.log.push({stageId:st.id, text:`Blocker flagged by ${who} — waiting on ${person?person.name:'someone'}`, at: Date.now()});
+    await saveBoard(); render(); openSheet(st.id);
+  };
+
+  const uploadBtn = document.getElementById('uploadAttachmentBtn');
+  const fileInputEl = document.getElementById('attachmentFile');
+  if(fileInputEl) fileInputEl.onchange = ()=>{
+    const f = fileInputEl.files[0];
+    const statusEl = document.getElementById('uploadStatus');
+    if(f && f.size > 25*1024*1024){
+      statusEl.textContent = `⚠ "${f.name}" is ${(f.size/1024/1024).toFixed(1)}MB — over the 25MB email limit. It'll still upload here, but the update email will only link to it, not attach it.`;
+    } else if(statusEl){
+      statusEl.textContent = '';
+    }
+  };
+  if(uploadBtn) uploadBtn.onclick = async ()=>{
+    const fileInput = document.getElementById('attachmentFile');
+    const file = fileInput.files[0];
+    const statusEl = document.getElementById('uploadStatus');
+    if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
+    const oversized = file.size > 25*1024*1024;
+    statusEl.textContent = oversized ? 'Uploading… (over 25MB — won\'t be attached to the email, just linked)' : 'Uploading…';
+    try{
+      const path = `sites/${activeStore}/stage${st.id}/${Date.now()}_${file.name}`;
+      const ref = storage.ref(path);
+      await ref.put(file);
+      const url = await ref.getDownloadURL();
+      d.attachments = d.attachments || [];
+      d.attachments.push({ name: file.name, url, path, uploadedBy: getWho(), uploadedAt: Date.now(), sizeBytes: file.size, oversized });
+      await saveBoard();
+      render(); openSheet(st.id);
+    }catch(e){
+      statusEl.textContent = 'Upload failed: ' + (e.message || e.code);
+    }
+  };
+  document.querySelectorAll('[data-preview]').forEach(el=>{
+    el.onclick = ()=>{
+      const att = d.attachments[parseInt(el.dataset.preview)];
+      if(att) openFilePreview(att.url, att.name);
+    };
+  });
+  document.querySelectorAll('[data-del-attachment]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const i = parseInt(btn.dataset.delAttachment);
+      const att = d.attachments[i];
+      if(!att) return;
+      // only the uploader or an admin ever sees this button, but double-check before deleting
+      if(!(att.uploadedBy === getWho() || isAdmin())) return;
+      if(!window.confirm(`Delete "${att.name}"? This can't be undone.`)) return;
+      try{ if(att.path) await storage.ref(att.path).delete(); }catch(e){ console.error('storage delete failed', e); }
+      d.attachments.splice(i, 1);
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+
+
+  const calcBtn = document.getElementById('calcBtn');
+  if(calcBtn) calcBtn.onclick = ()=> renderFxResults(readFxInputs());
+
+  document.querySelectorAll('[data-task-done]').forEach(chk=>{
+    chk.onchange = async ()=>{
+      const who = getWho();
+      const key = chk.dataset.taskDone;
+      d.tasks = d.tasks || {};
+      const existing = d.tasks[key] || { actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[] };
+      const dateInput = document.getElementById(`task_actual_${key}`);
+      d.tasks[key] = {
+        ...existing,
+        done: chk.checked,
+        actualDate: dateInput ? dateInput.value : existing.actualDate,
+        by: who, at: Date.now(),
+      };
+      const allDone = STAGE11_TASKS.every(item=>d.tasks[item.key] && d.tasks[item.key].done);
+      if(allDone && d.status !== 'done'){
+        d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
+        s.log.push({stageId:st.id, text:`All execution tasks complete, confirmed by ${who}`, at: Date.now()});
+      } else if(!allDone && d.status === 'done'){
+        d.status = 'active'; // a task got un-checked after completion
+      }
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+  STAGE11_TASKS.forEach(item=>{
+    const actualInp = document.getElementById(`task_actual_${item.key}`);
+    if(actualInp) actualInp.onchange = async ()=>{
+      d.tasks = d.tasks || {};
+      if(!d.tasks[item.key]) d.tasks[item.key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
+      d.tasks[item.key].actualDate = actualInp.value;
+      await saveBoard(); render(); openSheet(st.id);
+    };
+    const tstartInp = document.getElementById(`task_tstart_${item.key}`);
+    if(tstartInp) tstartInp.onchange = async ()=>{
+      d.tasks = d.tasks || {};
+      if(!d.tasks[item.key]) d.tasks[item.key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
+      d.tasks[item.key].tentativeStart = tstartInp.value;
+      await saveBoard(); render(); openSheet(st.id);
+    };
+    const tendInp = document.getElementById(`task_tend_${item.key}`);
+    if(tendInp) tendInp.onchange = async ()=>{
+      d.tasks = d.tasks || {};
+      if(!d.tasks[item.key]) d.tasks[item.key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
+      d.tasks[item.key].tentativeEnd = tendInp.value;
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+  document.querySelectorAll('[data-task-assign-add]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      if(!sel.value) return;
+      const key = sel.dataset.taskAssignAdd;
+      d.tasks = d.tasks || {};
+      if(!d.tasks[key]) d.tasks[key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
+      if(!d.tasks[key].assignedTo.includes(sel.value)) d.tasks[key].assignedTo.push(sel.value);
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+  document.querySelectorAll('[data-task-remove-assignee]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const [key, pid] = btn.dataset.taskRemoveAssignee.split('|');
+      if(d.tasks[key]) d.tasks[key].assignedTo = (d.tasks[key].assignedTo||[]).filter(x=>x!==pid);
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+  document.querySelectorAll('[data-task-transfer-btn]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const key = btn.dataset.taskTransferBtn;
+      const sel = document.querySelector(`[data-task-transfer-to="${key}"]`);
+      const newId = sel ? sel.value : '';
+      if(!newId) return;
+      const myId2 = (findMyStakeholder()||{}).id;
+      const oldP = board.stakeholders.find(p=>p.id===myId2);
+      const newP = board.stakeholders.find(p=>p.id===newId);
+      d.tasks[key].assignedTo = (d.tasks[key].assignedTo||[]).filter(x=>x!==myId2);
+      if(!d.tasks[key].assignedTo.includes(newId)) d.tasks[key].assignedTo.push(newId);
+      s.log.push({stageId:11, text:`${oldP?oldP.name:getWho()} transferred "${key}" to ${newP?newP.name:'someone'}`, at: Date.now()});
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+
+  const saveChecklistBtn = document.getElementById('saveChecklistBtn');
+  if(saveChecklistBtn) saveChecklistBtn.onclick = async ()=>{
+    const who = getWho();
+    function readTriplet(prefix, key){
+      const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+      return {
+        tentativeStart: g(`${prefix}_${key}_tstart`),
+        deliveryDate: g(`${prefix}_${key}_delivery`),
+        actualDate: g(`${prefix}_${key}_actual`),
+      };
+    }
+    STAGE11_DESIGN.forEach(f=>{
+      d.design[f.key] = f.dateTriplet ? readTriplet('dsn', f.key) : document.getElementById('dsn_'+f.key).value.trim();
+    });
+    STAGE11_DELIVERY.forEach(f=>{
+      d.delivery[f.key] = readTriplet('dlv', f.key);
+    });
+    STAGE11_FINAL.forEach(f=>{
+      d.finalStage[f.key] = f.dateTriplet ? readTriplet('fin', f.key) : document.getElementById('fin_'+f.key).value.trim();
+    });
+    d.updatedBy = who; d.updatedAt = Date.now();
+    await saveBoard(); render(); openSheet(st.id);
+  };
+
+  document.querySelectorAll('[data-clear-target]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const input = document.getElementById(btn.dataset.clearTarget);
+      if(input){ input.value = ''; input.dispatchEvent(new Event('change', {bubbles:true})); }
+    };
+  });
+
+  const logDelayBtn = document.getElementById('logDelayBtn');
+  if(logDelayBtn) logDelayBtn.onclick = async ()=>{
+    const who = getWho();
+    d.delayReason = document.getElementById('delayReasonField').value.trim();
+    d.delayLoggedBy = who; d.delayLoggedAt = Date.now();
+    s.log.push({stageId:st.id, text:`Delay logged by ${who}: "${d.delayReason}"`, at: Date.now()});
+    await saveBoard(); render(); openSheet(st.id);
+  };
+
+  document.querySelectorAll('[data-approver]').forEach(chip=>{
+    chip.onclick = async ()=>{
+      const who = getWho();
+      const pid = chip.dataset.approver;
+      d.approvals = d.approvals || {};
+      if(d.approvals[pid]) delete d.approvals[pid];
+      else d.approvals[pid] = { by: who, at: Date.now() };
+      const panel = board.approvalPanel;
+      const allApproved = panel.length===5 && panel.every(pid2=>d.approvals[pid2]);
+      if(allApproved){
+        d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
+        s.log.push({stageId:st.id, text:`All 5 signed off, confirmed by ${who}`, at: Date.now()});
+      }
+      await saveBoard(); render(); openSheet(st.id);
+    };
+  });
+
+  const declineBtn = document.getElementById('declineBtn');
+  if(declineBtn) declineBtn.onclick = async ()=>{
+    const who = getWho();
+    d.status = 'declined'; d.approvals = {}; d.updatedBy = who; d.updatedAt = Date.now();
+    d.delayReason=''; d.delayLoggedBy=''; d.delayLoggedAt=0;
+    const target = STAGES.find(x=>x.id===st.reworkTo);
+    if(target){
+      s.stageData[target.id].status = 'active';
+      s.stageData[target.id].startedAt = Date.now();
+      s.stageData[target.id].delayReason=''; s.stageData[target.id].delayLoggedBy=''; s.stageData[target.id].delayLoggedAt=0;
+      for(const later of STAGES){
+        if(later.id > target.id && later.id < st.id){
+          s.stageData[later.id].status = 'pending';
+          s.stageData[later.id].startedAt = null;
+        }
+      }
+      s.stageData[st.id].status = 'declined';
+    }
+    s.log.push({stageId:st.id, text:`Declined by ${who}, restarted to Stage ${target?target.num:''}`, at: Date.now()});
+    await saveBoard(); render(); closeSheet();
+  };
+
+  const confirmBtn = document.getElementById('confirmBtn');
+  if(confirmBtn) confirmBtn.onclick = async ()=>{
+    const who = getWho();
+    d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
+    s.log.push({stageId:st.id, text:`Load confirmed, logged by ${who}`, at: Date.now()});
+    await saveBoard(); render(); closeSheet();
+  };
+
+  const completeBtn = document.getElementById('completeBtn');
+  if(completeBtn) completeBtn.onclick = async ()=>{
+    const who = getWho();
+    const notes = document.getElementById('notesField');
+    if(notes) d.notes = notes.value.trim();
+    if(st.id === 3) d.financials = readFxInputs();
+    d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
+    if(st.id === 7) s.signingDate = Date.now();
+    s.log.push({stageId:st.id, text:`Marked complete by ${who}`, at: Date.now()});
+    await saveBoard(); render(); closeSheet();
+  };
+
+  const saveNotesBtn = document.getElementById('saveNotesBtn');
+  if(saveNotesBtn) saveNotesBtn.onclick = async ()=>{
+    const who = getWho();
+    d.notes = document.getElementById('notesField').value.trim();
+    if(st.id === 3) d.financials = readFxInputs();
+    d.updatedBy = who; d.updatedAt = Date.now();
+    await saveBoard(); render(); closeSheet();
+  };
+}
+function closeSheet(){ document.getElementById('sheetBackdrop').classList.remove('open'); }
+document.getElementById('sheetBackdrop').onclick = (e)=>{ if(e.target.id==='sheetBackdrop') closeSheet(); };
+
+document.getElementById('filePreviewClose').onclick = ()=>{
+  document.getElementById('filePreviewOverlay').classList.remove('open');
+  document.getElementById('filePreviewContent').innerHTML = '';
+};
+document.getElementById('filePreviewOverlay').onclick = (e)=>{
+  if(e.target.id === 'filePreviewOverlay'){
+    e.currentTarget.classList.remove('open');
+    document.getElementById('filePreviewContent').innerHTML = '';
+  }
+};
+
+// ---------- Admin view ----------
+function renderAdmin(){
+  const el = document.getElementById('adminView');
+  el.innerHTML = `
+    <div class="admin-section" id="adminRolesSection">
+      <h3>Roles</h3>
+      <div class="sub">Admin gets full control — sites, stakeholders, SLA, CapEx, closures. Developer is reserved for future structural editing (stage design) — no capability is gated on it yet.</div>
+      <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Admin</div>
+      ${ROOT_ADMIN_EMAILS.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><span class="admin-row-sub">built-in, can't remove</span></div>`).join('')}
+      ${board.adminEmails.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><button class="remove-x" data-del-admin-email="${escapeHtml(e)}">✕</button></div>`).join('')}
+      <div class="field"><input id="admNewAdminEmail" type="email" placeholder="add an admin's email"></div>
+      <div class="btn-row"><button class="btn ghost" id="admAddAdminEmail">Add admin</button></div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px;">Developer</div>
+      ${board.developerEmails.length === 0 ? `<div class="admin-row-sub" style="padding:6px 0;">No one yet.</div>` : board.developerEmails.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><button class="remove-x" data-del-dev-email="${escapeHtml(e)}">✕</button></div>`).join('')}
+      <div class="field"><input id="admNewDevEmail" type="email" placeholder="add a developer's email"></div>
+      <div class="btn-row"><button class="btn ghost" id="admAddDevEmail">Add developer</button></div>
+    </div>
+
+    <div class="admin-section">
+      <h3>Cities</h3>
+      <div class="sub">Add a city here to make it available when creating a site — useful for future expansion beyond Bangalore and Chennai.</div>
+      <div class="field"><label>City code</label><input id="admCityCode" placeholder="e.g. HYD" maxlength="5" style="text-transform:uppercase;"></div>
+      <div class="field"><label>City name</label><input id="admCityName" placeholder="e.g. Hyderabad"></div>
+      <div class="btn-row"><button class="btn primary" id="admAddCity">Add city</button></div>
+      ${board.cities.map(c=>`
+        <div class="admin-row">
+          <div class="admin-row-main">${escapeHtml(c.name)} <span class="admin-row-sub">(${escapeHtml(c.code)})</span></div>
+          ${c.code!=='BLR' && c.code!=='CHN' ? `<button class="remove-x" data-del-city="${c.code}">✕</button>` : `<span class="admin-row-sub">built-in</span>`}
+        </div>`).join('')}
+    </div>
+
+    <div class="admin-section">
+      <h3>Sites</h3>
+      <div class="sub">Adding a site here starts its NSO tracker from Stage 01.</div>
+      <div class="field"><label>Site name</label><input id="admSiteName" placeholder="e.g. Bangalore — Site 5"></div>
+      <div class="field"><label>City</label><select id="admSiteCity">${board.cities.map(c=>`<option value="${c.code}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>Format</label><select id="admSiteFormat">
+        <option value="Omni">Omni (Dine-in) — 1,200–1,300 sqft</option>
+        <option value="CloudKitchen">Cloud Kitchen — 650 sqft</option>
+      </select></div>
+      <div class="btn-row"><button class="btn primary" id="admAddSite">Add site</button></div>
+      ${board.sites.map(site=>`
+        <div class="admin-row">
+          <div><div class="admin-row-main">${escapeHtml(site.name)}</div>
+            <div class="admin-row-sub">${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)} · ${FORMATS[site.format].label}</div></div>
+          <button class="remove-x" data-del-site="${site.id}">✕</button>
+        </div>`).join('')}
+    </div>
+
+    <div class="admin-section" id="adminStakeholdersSection">
+      <h3>Stakeholders</h3>
+      <div class="sub">Level is a reference label. Tag someone as an Approver to make them eligible for the 5-way panel below. Email is required — project updates for this person's sites push to it automatically. "Reports to" is used when someone flags a blocker — their manager gets notified too.</div>
+      <div class="field"><label>Name</label><input id="admShName" placeholder="e.g. Priya Nair"></div>
+      <div class="field"><label>Email</label><input id="admShEmail" type="email" placeholder="priya@paradisefoodcourt.in"></div>
+      <div class="field"><label>Department</label><input id="admShDept" placeholder="e.g. Finance"></div>
+      <div class="field"><label>Level</label><select id="admShLevel">
+        ${LEVELS.map(l=>`<option value="${l.rank}">${l.label}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Reports to</label><select id="admShReportsTo">
+        <option value="">— none —</option>
+        ${board.stakeholders.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+      </select></div>
+      <div class="field" style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+        <input type="checkbox" id="admShApprover" style="width:auto;">
+        <label style="margin:0;text-transform:none;font-family:'Inter',sans-serif;font-size:13px;color:var(--ink);">Tag as approver</label>
+      </div>
+      <div class="btn-row"><button class="btn primary" id="admAddSh">Add stakeholder</button></div>
+
+      <div class="field" style="margin-top:16px;border-top:1px dashed var(--line);padding-top:14px;">
+        <label>Bulk upload (CSV/Excel)</label>
+        <div class="progress-line" style="margin-top:0;">Columns: Name, Email, Department, Level, Reports To, Approver (yes/no)</div>
+        <input type="file" id="admShBulkFile" accept=".csv,.xlsx,.xls">
+        <div class="btn-row"><button class="btn ghost" id="admShBulkBtn">Import stakeholders</button></div>
+        <div id="admShBulkStatus" class="progress-line"></div>
+      </div>
+
+      ${board.stakeholders.map(p=>{
+        const manager = p.reportsTo ? board.stakeholders.find(x=>x.id===p.reportsTo) : null;
+        return `
+        <div class="admin-row" style="flex-wrap:wrap;">
+          <div style="flex:1 1 100%;"><div class="admin-row-main">${escapeHtml(p.name)}</div>
+            <div class="admin-row-sub">${escapeHtml(p.department)}${manager ? ' · reports to '+escapeHtml(manager.name) : ''}</div></div>
+          <input data-email-edit="${p.id}" type="email" value="${escapeHtml(p.email||'')}" placeholder="add email — required for updates" style="flex:1;min-width:160px;font-size:11.5px;padding:6px 8px;margin-top:6px;${!p.email?'border-color:#E0A0A0;':''}">
+          <select data-level-edit="${p.id}" style="width:auto;font-size:11px;padding:5px 6px;margin-top:6px;">
+            ${LEVELS.map(l=>`<option value="${l.rank}" ${l.rank===p.level?'selected':''}>${l.label}</option>`).join('')}
+          </select>
+          <select data-reportsto-edit="${p.id}" style="width:auto;font-size:11px;padding:5px 6px;margin-top:6px;">
+            <option value="">— reports to —</option>
+            ${board.stakeholders.filter(x=>x.id!==p.id).map(x=>`<option value="${x.id}" ${x.id===p.reportsTo?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}
+          </select>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--sub);white-space:nowrap;margin-left:8px;margin-top:6px;">
+            <input type="checkbox" data-approver-edit="${p.id}" ${p.isApprover?'checked':''} style="width:auto;"> Approver
+          </label>
+          <button class="remove-x" data-del-sh="${p.id}">✕</button>
+        </div>`;
+      }).join('')}
+    </div>
+
+    ${pendingReportsToResolve.length ? `<div class="admin-section">
+      <h3>Match "Reports To"</h3>
+      <div class="sub">These imported people listed a manager name we couldn't match automatically to an existing stakeholder — pick the right person from the dropdown.</div>
+      ${pendingReportsToResolve.map(u=>{
+        const person = board.stakeholders.find(p=>p.id===u.personId);
+        return `<div class="admin-row">
+          <div class="admin-row-main" style="flex:1;">${escapeHtml(person?person.name:'?')} <span class="admin-row-sub">reports to "${escapeHtml(u.name)}"</span></div>
+          <select data-resolve-reports="${u.personId}">
+            <option value="">— select —</option>
+            ${board.stakeholders.filter(p=>p.id!==u.personId).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+
+    <div class="admin-section">
+      <h3>5-Way Approval Panel</h3>
+      <div class="sub">Stage 04 sign-off. Only stakeholders tagged as Approver above are eligible.</div>
+      ${[0,1,2,3,4].map(i=>{
+        const eligible = board.stakeholders.filter(p=>p.isApprover);
+        const currentId = board.approvalPanel[i] || '';
+        return `<div class="approver-slot-row">
+          <label>Seat ${i+1}</label>
+          <select data-slot="${i}">
+            <option value="">— unassigned —</option>
+            ${eligible.map(p=>`<option value="${p.id}" ${p.id===currentId?'selected':''}>${escapeHtml(p.name)} (${levelLabel(p.level)})</option>`).join('')}
+          </select>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="admin-section" id="adminSlaSection">
+      <h3>SLA Settings</h3>
+      <div class="sub">Override the default number of days for any stage or Post-LOI task. Leave blank to use the built-in default.</div>
+      <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Stages</div>
+      ${STAGES.map(st=>`
+        <div class="admin-row">
+          <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)} <span class="admin-row-sub">(default ${st.slaDays}d)</span></div>
+          <input type="number" data-sla-override="stage_${st.id}" value="${board.slaOverrides['stage_'+st.id] !== undefined ? board.slaOverrides['stage_'+st.id] : ''}" placeholder="${st.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
+        </div>`).join('')}
+      <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Post-LOI Execution tasks</div>
+      ${STAGE11_TASKS.map(item=>`
+        <div class="admin-row">
+          <div class="admin-row-main" style="flex:1;">${escapeHtml(item.label)} <span class="admin-row-sub">(default ${item.slaDays}d)</span></div>
+          <input type="number" data-sla-override="task_${item.key}" value="${board.slaOverrides['task_'+item.key] !== undefined ? board.slaOverrides['task_'+item.key] : ''}" placeholder="${item.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
+        </div>`).join('')}
+      <div class="btn-row"><button class="btn primary" id="admSaveSla">Save SLA changes</button></div>
+    </div>
+
+    <div class="admin-section">
+      <h3>Signed-in users</h3>
+      <div class="sub">Everyone who has logged in with an email to update this board.</div>
+      ${board.users.length === 0 ? `<div class="admin-row-sub" style="padding:8px 0;">No one has signed in yet.</div>` :
+        board.users.map(u=>`
+        <div class="admin-row">
+          <div><div class="admin-row-main">${escapeHtml(u.name)}</div>
+            <div class="admin-row-sub">${escapeHtml(u.email)} · first signed in ${fmtDate(u.firstLoginAt)}</div></div>
+          <button class="remove-x" data-del-user="${escapeHtml(u.email)}">✕</button>
+        </div>`).join('')}
+    </div>
+  `;
+
+  document.getElementById('admAddAdminEmail').onclick = async ()=>{
+    const email = document.getElementById('admNewAdminEmail').value.trim().toLowerCase();
+    if(!isValidEmail(email)) return;
+    if(ROOT_ADMIN_EMAILS.includes(email) || board.adminEmails.includes(email)) return;
+    board.adminEmails.push(email);
+    await saveBoard(); render();
+  };
+  el.querySelectorAll('[data-del-admin-email]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      board.adminEmails = board.adminEmails.filter(e=>e!==btn.dataset.delAdminEmail);
+      await saveBoard(); render();
+    };
+  });
+  document.getElementById('admAddDevEmail').onclick = async ()=>{
+    const email = document.getElementById('admNewDevEmail').value.trim().toLowerCase();
+    if(!isValidEmail(email)) return;
+    if(board.developerEmails.includes(email)) return;
+    board.developerEmails.push(email);
+    await saveBoard(); render();
+  };
+  el.querySelectorAll('[data-del-dev-email]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      board.developerEmails = board.developerEmails.filter(e=>e!==btn.dataset.delDevEmail);
+      await saveBoard(); render();
+    };
+  });
+
+  document.getElementById('admAddCity').onclick = async ()=>{
+    const code = document.getElementById('admCityCode').value.trim().toUpperCase();
+    const name = document.getElementById('admCityName').value.trim();
+    if(!code || !name) return;
+    if(board.cities.some(c=>c.code===code)) return;
+    board.cities.push({code, name});
+    await saveBoard(); render();
+  };
+  el.querySelectorAll('[data-del-city]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      board.cities = board.cities.filter(c=>c.code!==btn.dataset.delCity);
+      await saveBoard(); render();
+    };
+  });
+
+  document.getElementById('admSaveSla').onclick = async ()=>{
+    el.querySelectorAll('[data-sla-override]').forEach(inp=>{
+      const key = inp.dataset.slaOverride;
+      const val = inp.value.trim();
+      if(val === '') delete board.slaOverrides[key];
+      else board.slaOverrides[key] = parseInt(val);
+    });
+    await saveBoard(); render();
+  };
+
+  el.querySelectorAll('[data-del-user]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const email = btn.dataset.delUser;
+      board.users = board.users.filter(u=>u.email!==email);
+      await saveBoard(); render();
+    };
+  });
+
+  document.getElementById('admAddSite').onclick = async ()=>{
+    const name = document.getElementById('admSiteName').value.trim();
+    if(!name) return;
+    const site = { id: uid('site'), name, city: document.getElementById('admSiteCity').value, format: document.getElementById('admSiteFormat').value };
+    board.sites.push(site);
+    board.siteData[site.id] = makeSiteData(site);
+    activeStore = site.id;
+    await saveBoard();
+    currentView = 'tracker';
+    render();
+  };
+  el.querySelectorAll('[data-del-site]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = btn.dataset.delSite;
+      board.sites = board.sites.filter(s=>s.id!==id);
+      delete board.siteData[id];
+      if(activeStore === id) activeStore = board.sites.length ? board.sites[0].id : null;
+      await saveBoard(); render();
+    };
+  });
+
+  document.getElementById('admAddSh').onclick = async ()=>{
+    const name = document.getElementById('admShName').value.trim();
+    const email = document.getElementById('admShEmail').value.trim().toLowerCase();
+    if(!name) return;
+    if(!isValidEmail(email)){
+      const emailInput = document.getElementById('admShEmail');
+      emailInput.style.borderColor = '#C13E3E';
+      emailInput.focus();
+      return;
+    }
+    const p = { id: uid('sh'), name, email, department: document.getElementById('admShDept').value.trim(),
+      level: parseInt(document.getElementById('admShLevel').value),
+      reportsTo: document.getElementById('admShReportsTo').value || null,
+      isApprover: document.getElementById('admShApprover').checked };
+    board.stakeholders.push(p);
+    await saveBoard(); render();
+  };
+
+  const admShBulkBtn = document.getElementById('admShBulkBtn');
+  if(admShBulkBtn) admShBulkBtn.onclick = async ()=>{
+    const file = document.getElementById('admShBulkFile').files[0];
+    const statusEl = document.getElementById('admShBulkStatus');
+    if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
+    try{
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+      let added = 0;
+      const newlyUnresolved = [];
+      rows.forEach(row=>{
+        const name = String(row['Name']||'').trim();
+        if(!name) return;
+        const email = String(row['Email']||'').trim().toLowerCase();
+        const department = String(row['Department']||'').trim();
+        const levelRaw = String(row['Level']||'').trim();
+        let level = parseInt(levelRaw);
+        if(isNaN(level)){
+          const match = LEVELS.find(l=>l.label.toLowerCase()===levelRaw.toLowerCase());
+          level = match ? match.rank : 1;
+        }
+        const isApprover = /^y/i.test(String(row['Approver']||''));
+        const reportsToName = String(row['Reports To']||'').trim();
+        const newP = { id: uid('sh'), name, email, department, level, reportsTo:null, isApprover };
+        board.stakeholders.push(newP);
+        added++;
+        if(reportsToName){
+          const match = board.stakeholders.find(p=>p.name.toLowerCase()===reportsToName.toLowerCase() && p.id!==newP.id);
+          if(match) newP.reportsTo = match.id;
+          else newlyUnresolved.push({ personId: newP.id, name: reportsToName });
+        }
+      });
+      pendingReportsToResolve = pendingReportsToResolve.concat(newlyUnresolved);
+      await saveBoard();
+      statusEl.textContent = `Imported ${added} stakeholder(s).` + (newlyUnresolved.length ? ` ${newlyUnresolved.length} "Reports To" need manual matching below.` : '');
+      render();
+    }catch(e){
+      statusEl.textContent = 'Import failed: ' + e.message;
+    }
+  };
+
+  el.querySelectorAll('[data-resolve-reports]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      if(!sel.value) return;
+      const person = board.stakeholders.find(p=>p.id===sel.dataset.resolveReports);
+      if(person) person.reportsTo = sel.value;
+      pendingReportsToResolve = pendingReportsToResolve.filter(u=>u.personId!==sel.dataset.resolveReports);
+      await saveBoard(); render();
+    };
+  });
+
+  el.querySelectorAll('[data-del-sh]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = btn.dataset.delSh;
+      board.stakeholders = board.stakeholders.filter(p=>p.id!==id);
+      board.approvalPanel = board.approvalPanel.map(pid=>pid===id?'':pid);
+      // clear anyone who reported to the removed person, so no dangling reference
+      board.stakeholders.forEach(p=>{ if(p.reportsTo===id) p.reportsTo=null; });
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-level-edit]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const p = board.stakeholders.find(x=>x.id===sel.dataset.levelEdit);
+      if(p) p.level = parseInt(sel.value);
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-reportsto-edit]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const p = board.stakeholders.find(x=>x.id===sel.dataset.reportstoEdit);
+      if(p) p.reportsTo = sel.value || null;
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-email-edit]').forEach(inp=>{
+    inp.onchange = async ()=>{
+      const p = board.stakeholders.find(x=>x.id===inp.dataset.emailEdit);
+      const val = inp.value.trim().toLowerCase();
+      if(val && !isValidEmail(val)){
+        inp.style.borderColor = '#C13E3E';
+        return;
+      }
+      if(p) p.email = val;
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-approver-edit]').forEach(chk=>{
+    chk.onchange = async ()=>{
+      const p = board.stakeholders.find(x=>x.id===chk.dataset.approverEdit);
+      if(p) p.isApprover = chk.checked;
+      if(!chk.checked) board.approvalPanel = board.approvalPanel.map(pid=>pid===p.id?'':pid);
+      await saveBoard(); render();
+    };
+  });
+
+  el.querySelectorAll('[data-slot]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const i = parseInt(sel.dataset.slot);
+      board.approvalPanel[i] = sel.value;
+      await saveBoard(); render();
+    };
+  });
+}
+
+document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; render(); };
+document.getElementById('navMyTasks').onclick = ()=>{ currentView='myTasks'; render(); };
+document.getElementById('navFiles').onclick = ()=>{ currentView='files'; render(); };
+document.getElementById('navCapex').onclick = ()=>{ currentView='capex'; render(); };
+document.getElementById('navTemplates').onclick = ()=>{ currentView='templates'; render(); };
+document.getElementById('navAdmin').onclick = ()=>{ if(isAdmin()){ currentView='admin'; render(); } };
+
+// ---------- Log in / Sign up (Cloud Functions) + Firestore sync ----------
+// Log in = plain email + password, no OTP. Sign up = email -> verify code -> set
+// password, code required once only at account creation — matches the Mystery Audit
+// dashboard's pattern.
+function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+
+function showMsg(elId, msg, color){
+  const el = document.getElementById(elId);
+  el.textContent = msg;
+  el.style.color = color || '#C13E3E';
+  el.style.display = 'block';
+}
+function hideMsg(elId){ document.getElementById(elId).style.display = 'none'; }
+
+function showAuthStep(step){
+  document.getElementById('loginForm').style.display = step === 'login' ? 'block' : 'none';
+  document.getElementById('signupStep1').style.display = step === 'signupStep1' ? 'block' : 'none';
+  document.getElementById('signupStep2').style.display = step === 'signupStep2' ? 'block' : 'none';
+  document.getElementById('signupStep3').style.display = step === 'signupStep3' ? 'block' : 'none';
+  document.getElementById('loginNameField').style.display = step === 'enterName' ? 'block' : 'none';
+  document.getElementById('authTabLogin').classList.toggle('active', step === 'login' || step === 'enterName');
+  document.getElementById('authTabSignup').classList.toggle('active', step.indexOf('signup') === 0);
+}
+
+document.getElementById('authTabLogin').onclick = ()=>{ hideMsg('loginMsg'); showAuthStep('login'); };
+document.getElementById('authTabSignup').onclick = ()=>{ hideMsg('signupStep1Msg'); showAuthStep('signupStep1'); };
+
+// ---- Log in ----
+document.getElementById('loginBtn').onclick = async ()=>{
+  hideMsg('loginMsg');
+  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const password = document.getElementById('loginPassword').value;
+  if(!isValidEmail(email)){ showMsg('loginMsg', 'Enter a valid email address.'); return; }
+  if(!password){ showMsg('loginMsg', 'Enter your password.'); return; }
+  try{
+    document.getElementById('loginBtn').disabled = true;
+    const res = await loginFn({ email, password });
+    await auth.signInWithCustomToken(res.data.token);
+    // onAuthStateChanged below picks it up from here
+  }catch(e){
+    showMsg('loginMsg', e.message || 'Sign-in failed. Please try again.');
+  }finally{
+    document.getElementById('loginBtn').disabled = false;
+  }
+};
+
+// ---- Sign up step 1: send the code ----
+let signupEmail = null;
+document.getElementById('sendOtpBtn').onclick = async ()=>{
+  hideMsg('signupStep1Msg');
+  const email = document.getElementById('signupEmail').value.trim().toLowerCase();
+  if(!isValidEmail(email)){ showMsg('signupStep1Msg', 'Enter a valid email address.'); return; }
+  try{
+    document.getElementById('sendOtpBtn').disabled = true;
+    const res = await sendOtpCodeFn({ email });
+    if(res.data.hasPassword){
+      showMsg('signupStep1Msg', 'An account already exists for this email — use Log in instead.');
+      return;
+    }
+    signupEmail = email;
+    document.getElementById('signupEmailConfirm').textContent = email;
+    document.getElementById('otpInput').value = '';
+    showAuthStep('signupStep2');
+  }catch(e){
+    showMsg('signupStep1Msg', e.message || 'Could not send the code. Please try again.');
+  }finally{
+    document.getElementById('sendOtpBtn').disabled = false;
+  }
+};
+
+// ---- Sign up step 2: verify the code ----
+document.getElementById('verifyOtpBtn').onclick = async ()=>{
+  hideMsg('signupStep2Msg');
+  const code = document.getElementById('otpInput').value.trim();
+  if(!code){ showMsg('signupStep2Msg', 'Enter the 6-digit code.'); return; }
+  try{
+    document.getElementById('verifyOtpBtn').disabled = true;
+    await verifyOtpCodeFn({ email: signupEmail, code });
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newPasswordConfirm').value = '';
+    showAuthStep('signupStep3');
+  }catch(e){
+    showMsg('signupStep2Msg', e.message || 'That code is incorrect.');
+  }finally{
+    document.getElementById('verifyOtpBtn').disabled = false;
+  }
+};
+document.getElementById('resendOtpBtn').onclick = async ()=>{
+  hideMsg('signupStep2Msg');
+  try{
+    await sendOtpCodeFn({ email: signupEmail });
+    showMsg('signupStep2Msg', 'Sent a new code.', '#2F7A4F');
+  }catch(e){
+    showMsg('signupStep2Msg', e.message || 'Could not resend the code.');
+  }
+};
+
+// ---- Sign up step 3: create the account ----
+document.getElementById('createAccountBtn').onclick = async ()=>{
+  hideMsg('signupStep3Msg');
+  const password = document.getElementById('newPassword').value;
+  const confirm = document.getElementById('newPasswordConfirm').value;
+  if(password.length < 8){ showMsg('signupStep3Msg', 'Password must be at least 8 characters.'); return; }
+  if(password !== confirm){ showMsg('signupStep3Msg', 'Passwords do not match.'); return; }
+  try{
+    document.getElementById('createAccountBtn').disabled = true;
+    const res = await createAccountFn({ email: signupEmail, password });
+    await auth.signInWithCustomToken(res.data.token);
+    // onAuthStateChanged below picks it up from here
+  }catch(e){
+    showMsg('signupStep3Msg', e.message || 'Could not create your account. Please try again.');
+  }finally{
+    document.getElementById('createAccountBtn').disabled = false;
+  }
+};
+
+// ---- First-ever sign-in only: save a name once ----
+document.getElementById('saveNameBtn').onclick = async ()=>{
+  const name = document.getElementById('loginName').value.trim();
+  if(!name) return;
+  board.users.push({ email: pendingNewUserEmail, name, firstLoginAt: Date.now(), tutorialsSeen: [] });
+  await saveBoard();
+  currentUser = { email: pendingNewUserEmail, name };
+  pendingNewUserEmail = null;
+  document.getElementById('loginGate').style.display = 'none';
+  document.getElementById('whoDisplay').textContent = `Signed in as ${currentUser.name}`;
+  handleLanding();
+};
+
+document.getElementById('switchUserBtn').onclick = async ()=>{
+  await auth.signOut();
+  if(unsubscribeBoard){ unsubscribeBoard(); unsubscribeBoard = null; }
+  currentUser = null;
+  pendingNewUserEmail = null;
+  signupEmail = null;
+  board = null;
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('signupEmail').value = '';
+  document.getElementById('otpInput').value = '';
+  document.getElementById('newPassword').value = '';
+  document.getElementById('newPasswordConfirm').value = '';
+  document.getElementById('loginName').value = '';
+  hideMsg('loginMsg');
+  showAuthStep('login');
+  document.getElementById('loginGate').style.display = 'flex';
+};
+
+let pendingScopedLanding = null; // { siteId, stageId } — set once a scoped assignment link redeems successfully
+let scopedLinkChecked = false;   // becomes true once the attempt (if any) finishes, success or fail
+
+async function tryRedeemScopedLink(){
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if(!token){ scopedLinkChecked = true; return; }
+  try{
+    const res = await redeemScopedLinkFn({ token });
+    pendingScopedLanding = { siteId: res.data.siteId, stageId: res.data.stageId };
+    window.history.replaceState({}, document.title, window.location.pathname);
+    await auth.signInWithCustomToken(res.data.token);
+  }catch(e){
+    showMsg('loginMsg', e.message || 'That link is no longer valid. Please sign in normally.');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }finally{
+    scopedLinkChecked = true;
+  }
+}
+
+auth.onAuthStateChanged(async (user)=>{
+  if(user){
+    const email = (user.email || '').toLowerCase();
+    subscribeToBoard();
+    // wait for the first Firestore snapshot to populate `board`
+    while(!board){ await new Promise(r=>setTimeout(r, 80)); }
+    const existing = board.users.find(u=>u.email===email);
+    if(existing){
+      currentUser = { email, name: existing.name };
+      if(!activeStore || !getSite(activeStore) || !canSeeSite(getSite(activeStore))){ const vs = visibleSites(); activeStore = vs.length ? vs[0].id : null; }
+      document.getElementById('loginGate').style.display = 'none';
+      document.getElementById('whoDisplay').textContent = `Signed in as ${currentUser.name}`;
+      handleLanding();
+    } else {
+      pendingNewUserEmail = email;
+      showAuthStep('enterName');
+      document.getElementById('loginGate').style.display = 'flex';
+    }
+  } else {
+    if(!scopedLinkChecked){
+      return; // still trying a scoped link — don't flash the login gate while that's in flight
+    }
+    showAuthStep('login');
+    document.getElementById('loginGate').style.display = 'flex';
+  }
+});
+tryRedeemScopedLink();
+
+function handleLanding(){
+  if(pendingScopedLanding && board.siteData[pendingScopedLanding.siteId]){
+    activeStore = pendingScopedLanding.siteId;
+    currentView = 'tracker';
+    render();
+    openSheet(pendingScopedLanding.stageId);
+    pendingScopedLanding = null;
+    return; // arrived via a scoped assignment link — don't interrupt with a tutorial either
+  }
+  const urlParams = new URLSearchParams(window.location.search);
+  const linkSite = urlParams.get('site');
+  const linkStage = urlParams.get('stage');
+  if(linkSite && linkStage && board.siteData[linkSite]){
+    activeStore = linkSite;
+    currentView = 'tracker';
+    render();
+    openSheet(parseInt(linkStage));
+    return; // arriving via a direct task link — don't interrupt with a tutorial
+  }
+  const mine = findMyOpenAssignments();
+  if(mine.length === 1){
+    goToAssignment(mine[0]);
+  } else if(mine.length > 1){
+    currentView = 'myTasks';
+    render();
+    maybeStartTutorials();
+  } else {
+    currentView = 'tracker';
+    render();
+    maybeStartTutorials();
+  }
+}
+</script>
+</body>
+
+</html>
