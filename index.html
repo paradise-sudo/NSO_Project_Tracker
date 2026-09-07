@@ -357,12 +357,15 @@
       </div>
       <div id="loginMsg" class="login-note" style="color:#C13E3E;display:none;"></div>
       <div class="btn-row"><button class="btn primary" id="loginBtn">Log in</button></div>
+      <div class="btn-row"><button class="btn ghost" id="forgotPasswordBtn">Forgot password?</button></div>
     </div>
 
-    <!-- Sign up: email -> code -> password, in three steps -->
+    <!-- Sign up (authFlowMode='signup') and Forgot password (authFlowMode='reset') share
+         these same three steps — only the copy, button text, and final call differ. -->
     <div id="signupStep1" style="display:none;">
+      <p class="login-note" id="step1Intro" style="margin-top:0;"></p>
       <div class="field">
-        <label>Work email</label>
+        <label id="step1EmailLabel">Work email</label>
         <input id="signupEmail" type="email" placeholder="you@company.com">
       </div>
       <div id="signupStep1Msg" class="login-note" style="color:#C13E3E;display:none;"></div>
@@ -380,9 +383,9 @@
     </div>
 
     <div id="signupStep3" style="display:none;">
-      <p class="login-note">Create a password for your account</p>
+      <p class="login-note" id="step3Intro">Create a password for your account</p>
       <div class="field">
-        <label>Password (min 8 characters)</label>
+        <label id="step3PasswordLabel">Password (min 8 characters)</label>
         <input id="newPassword" type="password" placeholder="••••••••">
       </div>
       <div class="field">
@@ -489,6 +492,7 @@ const verifyOtpCodeFn = functionsClient.httpsCallable('verifyOtpCode');
 const createAccountFn = functionsClient.httpsCallable('createAccount');
 const loginFn = functionsClient.httpsCallable('login');
 const redeemScopedLinkFn = functionsClient.httpsCallable('redeemScopedLink');
+const resetPasswordFn = functionsClient.httpsCallable('resetPassword');
 const storage = firebase.storage();
 const BOARD_DOC = db.collection('nso').doc('board');
 let unsubscribeBoard = null;
@@ -2812,11 +2816,12 @@ document.getElementById('navCapex').onclick = ()=>{ currentView='capex'; render(
 document.getElementById('navTemplates').onclick = ()=>{ currentView='templates'; render(); };
 document.getElementById('navAdmin').onclick = ()=>{ if(isAdmin()){ currentView='admin'; render(); } };
 
-// ---------- Log in / Sign up (Cloud Functions) + Firestore sync ----------
-// Log in = plain email + password, no OTP. Sign up = email -> verify code -> set
-// password, code required once only at account creation — matches the Mystery Audit
-// dashboard's pattern.
+// ---------- Log in / Sign up / Forgot password (Cloud Functions) + Firestore sync ----------
+// Log in = plain email + password, no OTP. Sign up and Forgot password share the same
+// three-step shape (email -> verify code -> set password) — authFlowMode tracks which
+// one is in progress so the same steps can serve both without duplicating markup.
 function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+let authFlowMode = 'signup'; // 'signup' | 'reset'
 
 function showMsg(elId, msg, color){
   const el = document.getElementById(elId);
@@ -2824,7 +2829,23 @@ function showMsg(elId, msg, color){
   el.style.color = color || '#C13E3E';
   el.style.display = 'block';
 }
+// A message with one clickable action inside it — e.g. "...— use Log in instead."
+function showMsgWithLink(elId, before, linkText, after, onClick){
+  const el = document.getElementById(elId);
+  el.innerHTML = `${before}<a href="#" style="color:#C13E3E;font-weight:700;text-decoration:underline;" id="${elId}Link">${linkText}</a>${after}`;
+  el.style.color = '#C13E3E';
+  el.style.display = 'block';
+  document.getElementById(`${elId}Link`).onclick = (ev)=>{ ev.preventDefault(); onClick(); };
+}
 function hideMsg(elId){ document.getElementById(elId).style.display = 'none'; }
+// Genuinely unexpected server errors show as raw codes like "INTERNAL" — never show
+// that verbatim, always fall back to something a person can actually act on.
+function friendlyError(e, fallback){
+  if(!e || !e.message || e.message === 'INTERNAL' || e.message.toLowerCase() === 'internal'){
+    return "Something went wrong on our end. Please try again.";
+  }
+  return e.message || fallback;
+}
 
 function showAuthStep(step){
   document.getElementById('loginForm').style.display = step === 'login' ? 'block' : 'none';
@@ -2833,11 +2854,33 @@ function showAuthStep(step){
   document.getElementById('signupStep3').style.display = step === 'signupStep3' ? 'block' : 'none';
   document.getElementById('loginNameField').style.display = step === 'enterName' ? 'block' : 'none';
   document.getElementById('authTabLogin').classList.toggle('active', step === 'login' || step === 'enterName');
-  document.getElementById('authTabSignup').classList.toggle('active', step.indexOf('signup') === 0);
+  document.getElementById('authTabSignup').classList.toggle('active', step.indexOf('signup') === 0 && authFlowMode === 'signup');
+
+  if(step === 'signupStep1'){
+    document.getElementById('step1Intro').textContent = authFlowMode === 'reset'
+      ? "Enter your email and we'll send you a code to reset your password."
+      : '';
+    document.getElementById('step1EmailLabel').textContent = authFlowMode === 'reset' ? 'Email' : 'Work email';
+    document.getElementById('sendOtpBtn').textContent = authFlowMode === 'reset' ? 'Send reset code' : 'Send verification code';
+  }
+  if(step === 'signupStep3'){
+    document.getElementById('step3Intro').textContent = authFlowMode === 'reset'
+      ? 'Set a new password for your account'
+      : 'Create a password for your account';
+    document.getElementById('step3PasswordLabel').textContent = authFlowMode === 'reset' ? 'New password (min 8 characters)' : 'Password (min 8 characters)';
+    document.getElementById('createAccountBtn').textContent = authFlowMode === 'reset' ? 'Reset password' : 'Create account';
+  }
 }
 
 document.getElementById('authTabLogin').onclick = ()=>{ hideMsg('loginMsg'); showAuthStep('login'); };
-document.getElementById('authTabSignup').onclick = ()=>{ hideMsg('signupStep1Msg'); showAuthStep('signupStep1'); };
+document.getElementById('authTabSignup').onclick = ()=>{ authFlowMode = 'signup'; hideMsg('signupStep1Msg'); showAuthStep('signupStep1'); };
+document.getElementById('forgotPasswordBtn').onclick = ()=>{
+  authFlowMode = 'reset';
+  hideMsg('signupStep1Msg');
+  const prefill = document.getElementById('loginEmail').value.trim();
+  document.getElementById('signupEmail').value = prefill;
+  showAuthStep('signupStep1');
+};
 
 // ---- Log in ----
 document.getElementById('loginBtn').onclick = async ()=>{
@@ -2852,13 +2895,13 @@ document.getElementById('loginBtn').onclick = async ()=>{
     await auth.signInWithCustomToken(res.data.token);
     // onAuthStateChanged below picks it up from here
   }catch(e){
-    showMsg('loginMsg', e.message || 'Sign-in failed. Please try again.');
+    showMsg('loginMsg', friendlyError(e, 'Sign-in failed. Please try again.'));
   }finally{
     document.getElementById('loginBtn').disabled = false;
   }
 };
 
-// ---- Sign up step 1: send the code ----
+// ---- Step 1: send the code (used by both Sign up and Forgot password) ----
 let signupEmail = null;
 document.getElementById('sendOtpBtn').onclick = async ()=>{
   hideMsg('signupStep1Msg');
@@ -2867,8 +2910,21 @@ document.getElementById('sendOtpBtn').onclick = async ()=>{
   try{
     document.getElementById('sendOtpBtn').disabled = true;
     const res = await sendOtpCodeFn({ email });
-    if(res.data.hasPassword){
-      showMsg('signupStep1Msg', 'An account already exists for this email — use Log in instead.');
+    if(authFlowMode === 'signup' && res.data.hasPassword){
+      showMsgWithLink('signupStep1Msg', 'An account already exists for this email — ', 'click to log in', ' instead.', ()=>{
+        document.getElementById('loginEmail').value = email;
+        hideMsg('signupStep1Msg');
+        showAuthStep('login');
+      });
+      return;
+    }
+    if(authFlowMode === 'reset' && !res.data.hasPassword){
+      showMsgWithLink('signupStep1Msg', 'No account found for this email — ', 'click to sign up', ' instead.', ()=>{
+        authFlowMode = 'signup';
+        document.getElementById('signupEmail').value = email;
+        hideMsg('signupStep1Msg');
+        showAuthStep('signupStep1');
+      });
       return;
     }
     signupEmail = email;
@@ -2876,13 +2932,13 @@ document.getElementById('sendOtpBtn').onclick = async ()=>{
     document.getElementById('otpInput').value = '';
     showAuthStep('signupStep2');
   }catch(e){
-    showMsg('signupStep1Msg', e.message || 'Could not send the code. Please try again.');
+    showMsg('signupStep1Msg', friendlyError(e, 'Could not send the code. Please try again.'));
   }finally{
     document.getElementById('sendOtpBtn').disabled = false;
   }
 };
 
-// ---- Sign up step 2: verify the code ----
+// ---- Step 2: verify the code ----
 document.getElementById('verifyOtpBtn').onclick = async ()=>{
   hideMsg('signupStep2Msg');
   const code = document.getElementById('otpInput').value.trim();
@@ -2894,7 +2950,7 @@ document.getElementById('verifyOtpBtn').onclick = async ()=>{
     document.getElementById('newPasswordConfirm').value = '';
     showAuthStep('signupStep3');
   }catch(e){
-    showMsg('signupStep2Msg', e.message || 'That code is incorrect.');
+    showMsg('signupStep2Msg', friendlyError(e, 'That code is incorrect.'));
   }finally{
     document.getElementById('verifyOtpBtn').disabled = false;
   }
@@ -2905,11 +2961,11 @@ document.getElementById('resendOtpBtn').onclick = async ()=>{
     await sendOtpCodeFn({ email: signupEmail });
     showMsg('signupStep2Msg', 'Sent a new code.', '#2F7A4F');
   }catch(e){
-    showMsg('signupStep2Msg', e.message || 'Could not resend the code.');
+    showMsg('signupStep2Msg', friendlyError(e, 'Could not resend the code.'));
   }
 };
 
-// ---- Sign up step 3: create the account ----
+// ---- Step 3: create the account, or reset the password ----
 document.getElementById('createAccountBtn').onclick = async ()=>{
   hideMsg('signupStep3Msg');
   const password = document.getElementById('newPassword').value;
@@ -2918,11 +2974,12 @@ document.getElementById('createAccountBtn').onclick = async ()=>{
   if(password !== confirm){ showMsg('signupStep3Msg', 'Passwords do not match.'); return; }
   try{
     document.getElementById('createAccountBtn').disabled = true;
-    const res = await createAccountFn({ email: signupEmail, password });
+    const fn = authFlowMode === 'reset' ? resetPasswordFn : createAccountFn;
+    const res = await fn({ email: signupEmail, password });
     await auth.signInWithCustomToken(res.data.token);
     // onAuthStateChanged below picks it up from here
   }catch(e){
-    showMsg('signupStep3Msg', e.message || 'Could not create your account. Please try again.');
+    showMsg('signupStep3Msg', friendlyError(e, 'Could not complete this. Please try again.'));
   }finally{
     document.getElementById('createAccountBtn').disabled = false;
   }
@@ -2947,6 +3004,7 @@ document.getElementById('switchUserBtn').onclick = async ()=>{
   currentUser = null;
   pendingNewUserEmail = null;
   signupEmail = null;
+  authFlowMode = 'signup';
   board = null;
   document.getElementById('loginEmail').value = '';
   document.getElementById('loginPassword').value = '';
@@ -2973,7 +3031,7 @@ async function tryRedeemScopedLink(){
     window.history.replaceState({}, document.title, window.location.pathname);
     await auth.signInWithCustomToken(res.data.token);
   }catch(e){
-    showMsg('loginMsg', e.message || 'That link is no longer valid. Please sign in normally.');
+    showMsg('loginMsg', friendlyError(e, 'That link is no longer valid. Please sign in normally.'));
     window.history.replaceState({}, document.title, window.location.pathname);
   }finally{
     scopedLinkChecked = true;
