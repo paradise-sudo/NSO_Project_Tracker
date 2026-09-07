@@ -502,13 +502,6 @@ const FORMATS = {
   Omni: { label:'Omni (Dine-in)', sizeText:'1,200–1,300 sqft' },
   CloudKitchen: { label:'Cloud Kitchen', sizeText:'650 sqft' },
 };
-const LEVELS = [
-  {rank:1, label:'Team Member'},
-  {rank:2, label:'Manager'},
-  {rank:3, label:'Senior Manager'},
-  {rank:4, label:'Director'},
-  {rank:5, label:'Leadership (MD/CFO/CXO)'},
-];
 let currentUser = null;
 
 const STAGE4_REQUIRED_LEVEL = 4; // kept for reference/labeling only — panel eligibility is now the manual Approver tag
@@ -669,11 +662,11 @@ function defaultBoard(){
     {id:'CHN-1', name:'Chennai — Site 1', city:'CHN', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
   ];
   const seedStakeholders = [
-    {id:'sh_abhik', name:'Abhik Mitra', department:'MD Office', level:5, isApprover:true},
-    {id:'sh_jimmy', name:'Jimmy', department:'Finance (CFO)', level:5, isApprover:true},
-    {id:'sh_meenakshi', name:'Meenakshi', department:'Marketing', level:5, isApprover:true},
-    {id:'sh_rajeesh', name:'Rajeesh', department:'Technology', level:5, isApprover:true},
-    {id:'sh_ayush', name:'Ayush + Rajshekhar', department:'BD & Ops / Sales', level:4, isApprover:true},
+    {id:'sh_abhik', name:'Abhik Mitra', department:'MD Office', level:'Leadership (MD/CFO/CXO)', isApprover:true},
+    {id:'sh_jimmy', name:'Jimmy', department:'Finance (CFO)', level:'Leadership (MD/CFO/CXO)', isApprover:true},
+    {id:'sh_meenakshi', name:'Meenakshi', department:'Marketing', level:'Leadership (MD/CFO/CXO)', isApprover:true},
+    {id:'sh_rajeesh', name:'Rajeesh', department:'Technology', level:'Leadership (MD/CFO/CXO)', isApprover:true},
+    {id:'sh_ayush', name:'Ayush + Rajshekhar', department:'BD & Ops / Sales', level:'Director', isApprover:true},
   ];
   const seedTemplates = [
     {
@@ -876,7 +869,7 @@ function fmtINR(n){
   else s = Math.round(n).toLocaleString('en-IN');
   return '₹'+s;
 }
-function levelLabel(rank){ const l = LEVELS.find(x=>x.rank===rank); return l ? l.label : 'Level '+rank; }
+function levelLabel(level){ return level ? level : 'No title set'; }
 
 function getSite(id){ return board.sites.find(s=>s.id===id); }
 function storeState(id){ return board.siteData[id]; }
@@ -2499,9 +2492,7 @@ function renderAdmin(){
       <div class="field"><label>Name</label><input id="admShName" placeholder="e.g. Priya Nair"></div>
       <div class="field"><label>Email</label><input id="admShEmail" type="email" placeholder="priya@paradisefoodcourt.in"></div>
       <div class="field"><label>Department</label><input id="admShDept" placeholder="e.g. Finance"></div>
-      <div class="field"><label>Level</label><select id="admShLevel">
-        ${LEVELS.map(l=>`<option value="${l.rank}">${l.label}</option>`).join('')}
-      </select></div>
+      <div class="field"><label>Level / designation</label><input id="admShLevel" placeholder="e.g. Regional Manager"></div>
       <div class="field"><label>Reports to</label><select id="admShReportsTo">
         <option value="">— none —</option>
         ${board.stakeholders.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
@@ -2527,9 +2518,7 @@ function renderAdmin(){
           <div style="flex:1 1 100%;"><div class="admin-row-main">${escapeHtml(p.name)}</div>
             <div class="admin-row-sub">${escapeHtml(p.department)}${manager ? ' · reports to '+escapeHtml(manager.name) : ''}</div></div>
           <input data-email-edit="${p.id}" type="email" value="${escapeHtml(p.email||'')}" placeholder="add email — required for updates" style="flex:1;min-width:160px;font-size:11.5px;padding:6px 8px;margin-top:6px;${!p.email?'border-color:#E0A0A0;':''}">
-          <select data-level-edit="${p.id}" style="width:auto;font-size:11px;padding:5px 6px;margin-top:6px;">
-            ${LEVELS.map(l=>`<option value="${l.rank}" ${l.rank===p.level?'selected':''}>${l.label}</option>`).join('')}
-          </select>
+          <input data-level-edit="${p.id}" value="${escapeHtml(p.level||'')}" placeholder="level / designation" style="width:140px;font-size:11.5px;padding:6px 8px;margin-top:6px;">
           <select data-reportsto-edit="${p.id}" style="width:auto;font-size:11px;padding:5px 6px;margin-top:6px;">
             <option value="">— reports to —</option>
             ${board.stakeholders.filter(x=>x.id!==p.id).map(x=>`<option value="${x.id}" ${x.id===p.reportsTo?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}
@@ -2667,7 +2656,7 @@ function renderAdmin(){
   document.getElementById('admAddSite').onclick = async ()=>{
     const name = document.getElementById('admSiteName').value.trim();
     if(!name) return;
-    const site = { id: uid('site'), name, city: document.getElementById('admSiteCity').value, format: document.getElementById('admSiteFormat').value };
+    const site = { id: uid('site'), name, city: document.getElementById('admSiteCity').value, format: document.getElementById('admSiteFormat').value, templateId: 'tmpl_nso', status: 'live', ownerId: null };
     board.sites.push(site);
     board.siteData[site.id] = makeSiteData(site);
     activeStore = site.id;
@@ -2696,7 +2685,7 @@ function renderAdmin(){
       return;
     }
     const p = { id: uid('sh'), name, email, department: document.getElementById('admShDept').value.trim(),
-      level: parseInt(document.getElementById('admShLevel').value),
+      level: document.getElementById('admShLevel').value.trim(),
       reportsTo: document.getElementById('admShReportsTo').value || null,
       isApprover: document.getElementById('admShApprover').checked };
     board.stakeholders.push(p);
@@ -2719,12 +2708,7 @@ function renderAdmin(){
         if(!name) return;
         const email = String(row['Email']||'').trim().toLowerCase();
         const department = String(row['Department']||'').trim();
-        const levelRaw = String(row['Level']||'').trim();
-        let level = parseInt(levelRaw);
-        if(isNaN(level)){
-          const match = LEVELS.find(l=>l.label.toLowerCase()===levelRaw.toLowerCase());
-          level = match ? match.rank : 1;
-        }
+        const level = String(row['Level']||'').trim();
         const isApprover = /^y/i.test(String(row['Approver']||''));
         const reportsToName = String(row['Reports To']||'').trim();
         const newP = { id: uid('sh'), name, email, department, level, reportsTo:null, isApprover };
@@ -2765,10 +2749,10 @@ function renderAdmin(){
       await saveBoard(); render();
     };
   });
-  el.querySelectorAll('[data-level-edit]').forEach(sel=>{
-    sel.onchange = async ()=>{
-      const p = board.stakeholders.find(x=>x.id===sel.dataset.levelEdit);
-      if(p) p.level = parseInt(sel.value);
+  el.querySelectorAll('[data-level-edit]').forEach(inp=>{
+    inp.onchange = async ()=>{
+      const p = board.stakeholders.find(x=>x.id===inp.dataset.levelEdit);
+      if(p) p.level = inp.value.trim();
       await saveBoard(); render();
     };
   });
