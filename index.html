@@ -2771,7 +2771,7 @@ function renderAdmin(){
         <option value="CloudKitchen">Cloud Kitchen — 650 sqft</option>
       </select></div>
       <div class="btn-row"><button class="btn primary" id="admAddSite">Add site</button></div>
-      ${board.sites.map(site=>`
+      ${board.sites.filter(s=>!s.deletedAt).map(site=>`
         <div class="admin-row">
           <div><div class="admin-row-main">${escapeHtml(site.name)}</div>
             <div class="admin-row-sub">${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)} · ${FORMATS[site.format].label}</div></div>
@@ -3019,9 +3019,14 @@ function renderAdmin(){
   el.querySelectorAll('[data-del-site]').forEach(btn=>{
     btn.onclick = async ()=>{
       const id = btn.dataset.delSite;
-      board.sites = board.sites.filter(s=>s.id!==id);
-      delete board.siteData[id];
-      if(activeStore === id) activeStore = board.sites.length ? board.sites[0].id : null;
+      const site = board.sites.find(s=>s.id===id);
+      if(!site) return;
+      const typed = window.prompt(`This removes "${site.name}" from view for everyone. Nothing is permanently erased — restore it any time from Recently Deleted below.\n\nType the project name exactly to confirm:`);
+      if(typed === null) return;
+      if(typed !== site.name){ window.alert("That didn't match — nothing was deleted."); return; }
+      site.deletedAt = Date.now();
+      site.deletedBy = getWho();
+      if(activeStore === id){ const vs = visibleSites(); activeStore = vs.length ? vs[0].id : null; }
       await saveBoard(); render();
     };
   });
