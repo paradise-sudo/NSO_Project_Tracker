@@ -508,9 +508,11 @@ let currentUser = null;
 
 const STAGE4_REQUIRED_LEVEL = 4; // kept for reference/labeling only — panel eligibility is now the manual Approver tag
 
-const STAGES = [
-  {id:1, num:'01', title:'Market & Area Identification', type:'task', owner:'Ayush + Abhik + Meenakshi + Rajeesh + Jimmy', duration:'1–3 Months', slaDays:90,
-   desc:'Internal SiteIQ + GeoIQ analysis scores locations across 6 lenses. Final Rank = Internal Score (35%) + Swiggy/Zomato Volume (35%) + Share Gap (30%). Areas finalised before any scouting begins.'},
+// STAGES starts as this hardcoded default, then gets replaced with board.nsoStages the
+// moment the board loads — see subscribeToBoard/migrateStageStructure below. Since every
+// function reads this variable by name at call time (not a snapshot), reassigning it here
+// is enough to make the whole app stage-editable without touching every call site.
+let STAGES = [
   {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', slaDays:14,
    desc:'Physical scouting within identified markets.',
    warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
@@ -599,6 +601,7 @@ let activeStore = null;
 let currentView = 'tracker';
 let trackerSubView = 'list'; // 'list' (all projects) | 'detail' (one project's stages) — Tracker always lands on the list first
 let stageViewMode = 'vertical'; // 'vertical' | 'horizontal' — user's own choice, remembered per device
+let slaEditorSiteId = null; // which project's SLA overrides are currently shown in Admin's SLA Settings
 try{ const savedMode = localStorage.getItem('nsoStageViewMode'); if(savedMode) stageViewMode = savedMode; }catch(e){}
 let pendingReportsToResolve = []; // { personId, name } — imported rows whose "Reports To" text didn't auto-match
 
@@ -704,8 +707,8 @@ function makeSiteData(site){
   const stageData = {};
   STAGES.forEach(st=>{
     const skip = st.bangaloreOnly && site.city !== 'BLR';
-    stageData[st.id] = { status: skip ? 'skip' : (st.id===1 ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
-      startedAt: (st.id===1 && !skip) ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
+    stageData[st.id] = { status: skip ? 'skip' : (st.id===STAGES[0].id ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
+      startedAt: (st.id===STAGES[0].id && !skip && site.status !== 'draft') ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
     if(st.id === 3){
       stageData[st.id].financials = { capex:'', m1Revenue:'', monthlyGrowthPct:'', y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
     }
@@ -716,7 +719,7 @@ function makeSiteData(site){
       stageData[st.id].finalStage = {};  // { key: value }
     }
   });
-  return { current: 1, stageData, log: [], signingDate: null, comments: [], emailThread: null, projectClosed: false, closedBy: null, closedAt: null,
+  return { current: STAGES[0].id, stageData, log: [], signingDate: null, comments: [], emailThread: null, projectClosed: false, closedBy: null, closedAt: null,
     capex: { tentativeAssignees:[], actualAssignees:[], costVisibleTo:[], finalized:false, finalizedBy:null, finalizedAt:null, lineItems:[] }, closureOverride: null };
 }
 
@@ -745,6 +748,11 @@ function migrateStageStructure(){
   if(!board.slaOverrides){ board.slaOverrides = {}; changed = true; }
   if(!board.adminEmails){ board.adminEmails = []; changed = true; }
   if(!board.developerEmails){ board.developerEmails = []; changed = true; }
+  // The stage pipeline itself lives in board.nsoStages so it's editable — seed it from
+  // today's default the first time, then always point STAGES at whatever's actually
+  // stored, so every function in the app automatically uses the live, edited version.
+  if(!board.nsoStages || !board.nsoStages.length){ board.nsoStages = STAGES; changed = true; }
+  STAGES = board.nsoStages;
   if(!board.templates){
     board.templates = [{
       id: 'tmpl_nso', name: 'NSO — New Store Opening',
@@ -768,6 +776,10 @@ function migrateStageStructure(){
     if(s.projectClosed === undefined){ s.projectClosed = false; s.closedBy = null; s.closedAt = null; changed = true; }
     if(!s.capex){ s.capex = { tentativeAssignees:[], actualAssignees:[], costVisibleTo:[], finalized:false, finalizedBy:null, finalizedAt:null, lineItems:[] }; changed = true; }
     if(s.closureOverride === undefined){ s.closureOverride = null; changed = true; }
+    // Stage 1 (Market & Area Identification) was removed from the NSO pipeline — any
+    // existing site whose current stage pointer still points at it needs recomputing.
+    // Its old stageData[1] is deliberately left untouched, not deleted — just no longer shown.
+    if(!STAGES.find(st=>st.id===s.current)){ s.current = STAGES[0].id; changed = true; }
     STAGES.forEach(st=>{
       if(!s.stageData[st.id]){
         const skip = st.bangaloreOnly && site.city !== 'BLR';
@@ -809,6 +821,18 @@ async function saveBoard(){
 }
 function getWho(){ return (currentUser && currentUser.name) || 'someone'; }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Generates a sample CSV in-browser and downloads it — used next to every bulk-upload
+// control so people can see the exact expected column format before uploading their own.
+function downloadSampleCsv(headers, rows, filename){
+  const esc = v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 // Escapes text, then turns any URL back into a real clickable link — for notes/comments,
 // where someone might paste a Drive/Docs link and expect it to actually work.
 function escapeAndLinkify(s){
@@ -912,7 +936,7 @@ function calcProjection(f){
 
 function recompute(id){
   const s = storeState(id);
-  let current = 1;
+  let current = STAGES[0].id; // fallback if every stage is somehow done/skip — always the pipeline's actual first stage
   for(const st of STAGES){
     const d = s.stageData[st.id];
     if(d.status === 'done' || d.status === 'skip') continue;
@@ -932,28 +956,30 @@ function recompute(id){
 
 // Admin-editable SLA overrides live in board.slaOverrides, keyed 'stage_<id>' or 'task_<key>'.
 // Falls back to the built-in default (from STAGES / STAGE11_TASKS) when no override is set.
-function effectiveSla(key, defaultDays){
-  if(board && board.slaOverrides && board.slaOverrides[key] !== undefined && board.slaOverrides[key] !== ''){
-    const v = parseInt(board.slaOverrides[key]);
+// SLA overrides are scoped per individual project, not shared globally — board.slaOverrides
+// is now { siteId: { 'stage_<id>': days, 'task_<key>': days } } instead of one flat table.
+function effectiveSla(siteId, key, defaultDays){
+  if(board && board.slaOverrides && board.slaOverrides[siteId] && board.slaOverrides[siteId][key] !== undefined && board.slaOverrides[siteId][key] !== ''){
+    const v = parseInt(board.slaOverrides[siteId][key]);
     if(!isNaN(v)) return v;
   }
   return defaultDays;
 }
 
-function stageTiming(st, d){
+function stageTiming(st, d, siteId){
   if(!d.startedAt || d.status==='done' || d.status==='skip') return null;
   const elapsedDays = Math.floor((Date.now() - d.startedAt) / 86400000);
-  const sla = effectiveSla('stage_'+st.id, st.slaDays);
+  const sla = effectiveSla(siteId, 'stage_'+st.id, st.slaDays);
   const overdueDays = elapsedDays - sla;
   return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, sla };
 }
 
 // Same idea as stageTiming, but for an individual checklist item within Stage 11 —
 // all items share the stage's own startedAt (Construction Start) as their reference point.
-function itemTiming(startedAt, slaDays, taskKey){
+function itemTiming(startedAt, slaDays, taskKey, siteId){
   if(!startedAt) return null;
   const elapsedDays = Math.floor((Date.now() - startedAt) / 86400000);
-  const sla = taskKey ? effectiveSla('task_'+taskKey, slaDays) : slaDays;
+  const sla = taskKey ? effectiveSla(siteId, 'task_'+taskKey, slaDays) : slaDays;
   const overdueDays = elapsedDays - sla;
   return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, sla };
 }
@@ -1362,6 +1388,7 @@ function renderCapexView(){
       <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
         <label>Bulk upload line items (CSV/Excel)</label>
         <div class="progress-line" style="margin-top:0;">Columns: Item, Quantity, Tentative Rate</div>
+        <div class="btn-row"><button type="button" class="btn ghost" id="downloadSampleCapexTentative">Download sample template</button></div>
         <input type="file" id="capexBulkFile" accept=".csv,.xlsx,.xls">
         <div class="btn-row"><button class="btn ghost" id="capexBulkBtn">Import line items</button></div>
         <div id="capexBulkStatus" class="progress-line"></div>
@@ -1372,6 +1399,7 @@ function renderCapexView(){
     html += `<div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
       <label>Update actual costs — bulk upload (CSV/Excel)</label>
       <div class="progress-line" style="margin-top:0;">Columns: Item, Actual Rate — matched to existing line items by item name. Only items that already have a tentative rate will be updated; others are skipped and listed after import. To update one at a time instead, edit the "Actual rate" field on any line item above.</div>
+      <div class="btn-row"><button type="button" class="btn ghost" id="downloadSampleCapexActual">Download sample template</button></div>
       <input type="file" id="capexActualBulkFile" accept=".csv,.xlsx,.xls">
       <div class="btn-row"><button class="btn ghost" id="capexActualBulkBtn">Import actual costs</button></div>
       <div id="capexActualBulkStatus" class="progress-line"></div>
@@ -1429,6 +1457,12 @@ function renderCapexView(){
     c.lineItems.push({ id: uid('li'), name, qty:'', tentativeRate:'', actualRate:'', actualBy:'', actualAt:0 });
     await saveBoard(); render();
   };
+  const downloadSampleCapexTentative = document.getElementById('downloadSampleCapexTentative');
+  if(downloadSampleCapexTentative) downloadSampleCapexTentative.onclick = ()=>{
+    downloadSampleCsv(['Item','Quantity','Tentative Rate'], [
+      ['DG Set','1','180000'], ['POS Terminals','3','45000'], ['Chairs','40','3500'],
+    ], 'sample-capex-tentative.csv');
+  };
   const capexBulkBtn = document.getElementById('capexBulkBtn');
   if(capexBulkBtn) capexBulkBtn.onclick = async ()=>{
     const file = document.getElementById('capexBulkFile').files[0];
@@ -1455,6 +1489,12 @@ function renderCapexView(){
     }catch(e){
       statusEl.textContent = 'Import failed: ' + e.message;
     }
+  };
+  const downloadSampleCapexActual = document.getElementById('downloadSampleCapexActual');
+  if(downloadSampleCapexActual) downloadSampleCapexActual.onclick = ()=>{
+    downloadSampleCsv(['Item','Actual Rate'], [
+      ['DG Set','192000'], ['POS Terminals','47500'], ['Chairs','3200'],
+    ], 'sample-capex-actual.csv');
   };
   const capexActualBulkBtn = document.getElementById('capexActualBulkBtn');
   if(capexActualBulkBtn) capexActualBulkBtn.onclick = async ()=>{
@@ -1516,7 +1556,7 @@ function canSeeSite(site){
     return false;
   });
 }
-function visibleSites(){ return board.sites.filter(canSeeSite); }
+function visibleSites(){ return board.sites.filter(site => !site.deletedAt && canSeeSite(site)); }
 
 function renderTemplatesView(){
   const el = document.getElementById('templatesView');
@@ -1561,7 +1601,7 @@ function renderTemplatesView(){
     const mySites = visibleSites();
     html += `<div class="admin-section">
       <h3>Save a Project as a New Template</h3>
-      <div class="sub">Creates a new, reusable template entry from a project's basic info — Developer-only. This doesn't yet let you redesign its stage structure; that's a future capability, not built yet.</div>
+      <div class="sub">Creates a new, reusable template entry from a project's basic info — Developer-only. All projects currently share one editable pipeline (see Stage Editor below) — independent pipelines per template aren't built yet.</div>
       <div class="field"><label>Project</label><select id="saveTemplateSiteSelect">
         ${mySites.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
       </select></div>
@@ -1587,7 +1627,106 @@ function renderTemplatesView(){
     }
   }
 
+  if(isDeveloper() || isAdmin()){
+    html += `<div class="admin-section">
+      <h3>Stage Editor</h3>
+      <div class="sub">This is the one shared pipeline every NSO project currently follows — add, edit, reorder, or remove a stage below and it applies everywhere immediately. Deleting a stage never erases any project's existing data for it, it just stops showing.</div>
+      ${STAGES.map((st,i)=>`
+        <div class="admin-row" style="flex-wrap:wrap;align-items:flex-start;">
+          <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+            <span style="font-family:monospace;font-size:11px;color:var(--sub);width:24px;">${st.num}</span>
+            <input data-stage-edit-title="${st.id}" value="${escapeHtml(st.title)}" style="flex:1;font-weight:700;">
+          </div>
+          <select data-stage-edit-type="${st.id}" style="width:auto;font-size:11px;">
+            <option value="task" ${st.type==='task'?'selected':''}>Task</option>
+            <option value="approval" ${st.type==='approval'?'selected':''}>Approval</option>
+            <option value="gate" ${st.type==='gate'?'selected':''}>Gate</option>
+            <option value="checklist" ${st.type==='checklist'?'selected':''}>Checklist</option>
+          </select>
+          <input data-stage-edit-owner="${st.id}" value="${escapeHtml(st.owner||'')}" placeholder="Owner" style="flex:1;min-width:140px;font-size:11.5px;">
+          <input data-stage-edit-sla="${st.id}" type="number" value="${st.slaDays||''}" placeholder="SLA days" style="width:80px;font-size:11.5px;">
+          <textarea data-stage-edit-desc="${st.id}" placeholder="Description" style="flex:1 1 100%;font-size:11.5px;min-height:44px;margin-top:6px;">${escapeHtml(st.desc||'')}</textarea>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex:1 1 100%;">
+            <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" data-stage-edit-blroly="${st.id}" ${st.bangaloreOnly?'checked':''} style="width:auto;"> Bangalore only
+            </label>
+            <button class="btn ghost" data-stage-move-up="${st.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===0?'disabled':''}>↑</button>
+            <button class="btn ghost" data-stage-move-down="${st.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===STAGES.length-1?'disabled':''}>↓</button>
+            <button class="remove-x" data-stage-delete="${st.id}" style="margin-left:auto;">✕</button>
+          </div>
+        </div>`).join('')}
+      <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+        <label>New stage name</label><input id="newStageTitle" placeholder="e.g. Final Inspection">
+      </div>
+      <div class="field"><label>Type</label><select id="newStageType">
+        <option value="task">Task</option><option value="approval">Approval</option>
+        <option value="gate">Gate</option><option value="checklist">Checklist</option>
+      </select></div>
+      <div class="field"><label>SLA (days)</label><input id="newStageSla" type="number" placeholder="e.g. 7"></div>
+      <div class="btn-row"><button class="btn primary" id="addStageBtn">Add stage at the end</button></div>
+    </div>`;
+  }
+
   el.innerHTML = html;
+
+  const renumberAndSave = async ()=>{
+    STAGES.forEach((st,i)=>{ st.num = String(i+1).padStart(2,'0'); });
+    await saveBoard(); render();
+  };
+  el.querySelectorAll('[data-stage-edit-title]').forEach(inp=>{
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditTitle)); if(st) st.title = inp.value.trim(); saveBoard(); };
+  });
+  el.querySelectorAll('[data-stage-edit-type]').forEach(sel=>{
+    sel.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(sel.dataset.stageEditType)); if(st) st.type = sel.value; saveBoard(); };
+  });
+  el.querySelectorAll('[data-stage-edit-owner]').forEach(inp=>{
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditOwner)); if(st) st.owner = inp.value.trim(); saveBoard(); };
+  });
+  el.querySelectorAll('[data-stage-edit-sla]').forEach(inp=>{
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditSla)); if(st) st.slaDays = parseInt(inp.value)||1; saveBoard(); };
+  });
+  el.querySelectorAll('[data-stage-edit-desc]').forEach(ta=>{
+    ta.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(ta.dataset.stageEditDesc)); if(st) st.desc = ta.value.trim(); saveBoard(); };
+  });
+  el.querySelectorAll('[data-stage-edit-blroly]').forEach(chk=>{
+    chk.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(chk.dataset.stageEditBlroly)); if(st) st.bangaloreOnly = chk.checked; saveBoard(); };
+  });
+  el.querySelectorAll('[data-stage-move-up]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = parseInt(btn.dataset.stageMoveUp);
+      const i = STAGES.findIndex(x=>x.id===id);
+      if(i > 0){ [STAGES[i-1], STAGES[i]] = [STAGES[i], STAGES[i-1]]; await renumberAndSave(); }
+    };
+  });
+  el.querySelectorAll('[data-stage-move-down]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = parseInt(btn.dataset.stageMoveDown);
+      const i = STAGES.findIndex(x=>x.id===id);
+      if(i < STAGES.length-1){ [STAGES[i], STAGES[i+1]] = [STAGES[i+1], STAGES[i]]; await renumberAndSave(); }
+    };
+  });
+  el.querySelectorAll('[data-stage-delete]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = parseInt(btn.dataset.stageDelete);
+      const st = STAGES.find(x=>x.id===id);
+      if(!st) return;
+      if(!window.confirm(`Remove "${st.title}" from the pipeline? Any project's existing data for this stage stays saved, it just won't show anymore.`)) return;
+      const idx = STAGES.findIndex(x=>x.id===id);
+      STAGES.splice(idx, 1);
+      await renumberAndSave();
+    };
+  });
+  const addStageBtn = document.getElementById('addStageBtn');
+  if(addStageBtn) addStageBtn.onclick = async ()=>{
+    const title = document.getElementById('newStageTitle').value.trim();
+    if(!title) return;
+    const type = document.getElementById('newStageType').value;
+    const slaDays = parseInt(document.getElementById('newStageSla').value) || 7;
+    const newId = STAGES.length ? Math.max(...STAGES.map(x=>x.id)) + 1 : 1;
+    STAGES.push({ id: newId, num: '00', title, type, owner: '', duration: `${slaDays}d`, slaDays, desc: '' });
+    document.getElementById('newStageTitle').value = '';
+    await renumberAndSave();
+  };
 
   el.querySelectorAll('[data-create-project]').forEach(btn=>{
     btn.onclick = async ()=>{
@@ -1610,6 +1749,14 @@ function renderTemplatesView(){
       const site = getSite(btn.dataset.publishDraft);
       if(!site) return;
       site.status = 'live';
+      // The SLA clock only starts once a project is actually active — a draft sitting
+      // around doesn't burn its first stage's SLA before anyone's even seen it.
+      const s = storeState(site.id);
+      if(s){
+        const firstStage = STAGES[0];
+        const d = s.stageData[firstStage.id];
+        if(d && d.status === 'active' && !d.startedAt) d.startedAt = Date.now();
+      }
       await saveBoard();
       render();
     };
@@ -1641,7 +1788,7 @@ function renderTabs(){
     const st = storeState(site.id);
     const curStage = STAGES.find(x=>x.id===st.current);
     const curD = st.stageData[st.current];
-    const curT = curStage ? stageTiming(curStage, curD) : null;
+    const curT = curStage ? stageTiming(curStage, curD, site.id) : null;
     let pipColor = 'var(--active)';
     if(curStage && curStage.type==='approval') pipColor = 'var(--appr-ink)';
     if(curStage && curStage.type==='gate') pipColor = 'var(--gate-ink)';
@@ -1675,7 +1822,7 @@ function renderProjectList(){
     if(!s) return;
     const curStage = STAGES.find(x=>x.id===s.current);
     const curD = s.stageData[s.current];
-    const curT = curStage ? stageTiming(curStage, curD) : null;
+    const curT = curStage ? stageTiming(curStage, curD, site.id) : null;
     const doneFinal = s.stageData[11] && s.stageData[11].status === 'done';
     let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `${curStage.num} — ${curStage.title}` : '';
     if(s.projectClosed){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Project Closed'; }
@@ -1777,15 +1924,16 @@ function renderSummary(){
       <button class="btn ghost" id="deleteProjectBtn" style="width:100%;color:#8A2E2E;border-color:#8A2E2E;">Delete Project</button>
     </div>`);
     document.getElementById('deleteProjectBtn').onclick = async ()=>{
-      const typed = window.prompt(`This permanently deletes "${site.name}" and everything in it — stages, comments, CapEx, file references. This cannot be undone.\n\nType the project name exactly to confirm:`);
+      const typed = window.prompt(`This removes "${site.name}" from view for everyone. Nothing is permanently erased — an Admin can restore it later from Admin \u2192 Recently Deleted.\n\nType the project name exactly to confirm:`);
       if(typed === null) return;
       if(typed !== site.name){ window.alert("That didn't match — nothing was deleted."); return; }
-      board.sites = board.sites.filter(x=>x.id!==site.id);
-      delete board.siteData[site.id];
+      site.deletedAt = Date.now();
+      site.deletedBy = getWho();
       await saveBoard();
       const vs = visibleSites();
       activeStore = vs.length ? vs[0].id : null;
       currentView = 'tracker';
+      trackerSubView = 'list';
       render();
     };
   }
@@ -1826,13 +1974,13 @@ function renderFlow(){
 
   const overdueStages = STAGES.filter(st=>{
     const d = s.stageData[st.id];
-    const t = stageTiming(st, d);
+    const t = stageTiming(st, d, activeStore);
     return t && t.isOverdue;
   });
   if(overdueStages.length){
     html += `<div class="delay-banner">` + overdueStages.map(st=>{
       const d = s.stageData[st.id];
-      const t = stageTiming(st, d);
+      const t = stageTiming(st, d, activeStore);
       const reasonBit = d.delayReason
         ? `Reason logged: "${escapeAndLinkify(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}`
         : `No reason logged yet — tap the stage to log one.`;
@@ -1849,12 +1997,12 @@ function renderFlow(){
   const stageMeta = STAGES.map(st=>{
     const d = s.stageData[st.id];
     if(d.status === 'skip') return { st, d, skip:true };
-    const t = stageTiming(st, d);
+    const t = stageTiming(st, d, activeStore);
     let dotCls = d.status;
     if(t && t.isOverdue) dotCls = 'overdue';
     let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : (t && t.isOverdue ? '!' : st.num));
     let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back'}[d.status];
-    let slaBit = `SLA ${effectiveSla('stage_'+st.id, st.slaDays)}d`;
+    let slaBit = `SLA ${effectiveSla(activeStore, 'stage_'+st.id, st.slaDays)}d`;
     if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over SLA` : `Day ${t.elapsedDays} of ${t.sla}d SLA`;
     let ownerText = st.owner;
     if(st.id === 2) ownerText = st.owner + ` · target ${FORMATS[site.format].sizeText}`;
@@ -1977,7 +2125,7 @@ function openSheet(stageId){
   inner += `</details>`;
   if(st.warning) inner += `<div class="warn">⚠ ${escapeHtml(st.warning)}</div>`;
 
-  const t = stageTiming(st, d);
+  const t = stageTiming(st, d, activeStore);
   if(t){
     inner += `<div class="meta" style="margin-top:-6px;">Day ${t.elapsedDays} of ${t.sla}d SLA${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
   }
@@ -2098,7 +2246,7 @@ function openSheet(stageId){
     const overPlanCount = STAGE11_TASKS.filter(item=>{
       const rec = d.tasks[item.key];
       if(!rec || !rec.tentativeStart || !rec.tentativeEnd) return false;
-      const sla = effectiveSla('task_'+item.key, item.slaDays);
+      const sla = effectiveSla(activeStore, 'task_'+item.key, item.slaDays);
       const plannedDays = Math.round((new Date(rec.tentativeEnd) - new Date(rec.tentativeStart)) / 86400000);
       return plannedDays > sla;
     }).length;
@@ -2115,8 +2263,8 @@ function openSheet(stageId){
       <summary>Execution Tasks (${STAGE11_TASKS.length})</summary>`;
     STAGE11_TASKS.forEach(item=>{
       const rec = d.tasks[item.key] || { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
-      const sla = effectiveSla('task_'+item.key, item.slaDays);
-      const it = itemTiming(d.startedAt, item.slaDays, item.key);
+      const sla = effectiveSla(activeStore, 'task_'+item.key, item.slaDays);
+      const it = itemTiming(d.startedAt, item.slaDays, item.key, activeStore);
       const slaLabel = it ? (it.isOverdue ? `${it.overdueDays}d over ${sla}d SLA` : `Day ${it.elapsedDays} of ${sla}d SLA`) : `${sla}d SLA`;
       const missingDate = rec.done && !rec.actualDate;
       let plannedDays = null;
@@ -2650,6 +2798,7 @@ function renderAdmin(){
       <div class="field" style="margin-top:16px;border-top:1px dashed var(--line);padding-top:14px;">
         <label>Bulk upload (CSV/Excel)</label>
         <div class="progress-line" style="margin-top:0;">Columns: Name, Email, Department, Level, Reports To, Approver (yes/no)</div>
+        <div class="btn-row"><button type="button" class="btn ghost" id="downloadSampleStakeholders">Download sample template</button></div>
         <input type="file" id="admShBulkFile" accept=".csv,.xlsx,.xls">
         <div class="btn-row"><button class="btn ghost" id="admShBulkBtn">Import stakeholders</button></div>
         <div id="admShBulkStatus" class="progress-line"></div>
@@ -2707,21 +2856,31 @@ function renderAdmin(){
     </div>
 
     <div class="admin-section" id="adminSlaSection">
-      <h3>SLA Settings</h3>
-      <div class="sub">Override the default number of days for any stage or Post-LOI task. Leave blank to use the built-in default.</div>
-      <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Stages</div>
-      ${STAGES.map(st=>`
-        <div class="admin-row">
-          <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)} <span class="admin-row-sub">(default ${st.slaDays}d)</span></div>
-          <input type="number" data-sla-override="stage_${st.id}" value="${board.slaOverrides['stage_'+st.id] !== undefined ? board.slaOverrides['stage_'+st.id] : ''}" placeholder="${st.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
-        </div>`).join('')}
-      <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Post-LOI Execution tasks</div>
-      ${STAGE11_TASKS.map(item=>`
-        <div class="admin-row">
-          <div class="admin-row-main" style="flex:1;">${escapeHtml(item.label)} <span class="admin-row-sub">(default ${item.slaDays}d)</span></div>
-          <input type="number" data-sla-override="task_${item.key}" value="${board.slaOverrides['task_'+item.key] !== undefined ? board.slaOverrides['task_'+item.key] : ''}" placeholder="${item.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
-        </div>`).join('')}
-      <div class="btn-row"><button class="btn primary" id="admSaveSla">Save SLA changes</button></div>
+      <details class="collapse-group">
+        <summary>SLA Settings <span style="font-weight:400;color:var(--sub);font-size:11px;">Admin only</span></summary>
+        <div class="sub" style="margin-top:0;">Each project can have its own SLA — pick one below, then override any stage or task just for it. Leave blank to use the built-in default.</div>
+        <div class="field"><label>Project</label>
+          <select id="slaProjectPicker">
+            <option value="">— select a project —</option>
+            ${board.sites.filter(s=>!s.deletedAt).map(s=>`<option value="${s.id}" ${slaEditorSiteId===s.id?'selected':''}>${escapeHtml(s.name)}${s.status==='draft'?' (draft)':''}</option>`).join('')}
+          </select>
+        </div>
+        ${slaEditorSiteId ? `
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Stages</div>
+          ${STAGES.map(st=>`
+            <div class="admin-row">
+              <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)} <span class="admin-row-sub">(default ${st.slaDays}d)</span></div>
+              <input type="number" data-sla-override="stage_${st.id}" value="${(board.slaOverrides[slaEditorSiteId] && board.slaOverrides[slaEditorSiteId]['stage_'+st.id] !== undefined) ? board.slaOverrides[slaEditorSiteId]['stage_'+st.id] : ''}" placeholder="${st.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
+            </div>`).join('')}
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Post-LOI Execution tasks</div>
+          ${STAGE11_TASKS.map(item=>`
+            <div class="admin-row">
+              <div class="admin-row-main" style="flex:1;">${escapeHtml(item.label)} <span class="admin-row-sub">(default ${item.slaDays}d)</span></div>
+              <input type="number" data-sla-override="task_${item.key}" value="${(board.slaOverrides[slaEditorSiteId] && board.slaOverrides[slaEditorSiteId]['task_'+item.key] !== undefined) ? board.slaOverrides[slaEditorSiteId]['task_'+item.key] : ''}" placeholder="${item.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
+            </div>`).join('')}
+          <div class="btn-row"><button class="btn primary" id="admSaveSla">Save SLA changes for this project</button></div>
+        ` : `<div class="empty-note">Pick a project above to see and edit its SLA overrides.</div>`}
+      </details>
     </div>
 
     <div class="admin-section">
@@ -2735,6 +2894,22 @@ function renderAdmin(){
           <button class="remove-x" data-del-user="${escapeHtml(u.email)}">✕</button>
         </div>`).join('')}
     </div>
+
+    <div class="admin-section">
+      <h3>Recently Deleted</h3>
+      <div class="sub">Deleting a project never erases its data — it just hides it from everyone. Restore it here any time.</div>
+      ${(()=>{
+        const deleted = board.sites.filter(s=>s.deletedAt);
+        if(!deleted.length) return `<div class="empty-note">Nothing deleted right now.</div>`;
+        return deleted.map(s=>`
+          <div class="admin-row" style="flex-wrap:wrap;">
+            <div style="flex:1 1 100%;"><div class="admin-row-main">${escapeHtml(s.name)}</div>
+              <div class="admin-row-sub">Deleted by ${escapeHtml(s.deletedBy||'—')} · ${fmtDate(s.deletedAt)}</div></div>
+            <button class="btn ghost" data-restore-project="${s.id}" style="width:auto;">Restore</button>
+            <button class="remove-x" data-permadelete-project="${s.id}" title="Delete permanently — cannot be undone">✕</button>
+          </div>`).join('');
+      })()}
+    </div>
   `;
 
   document.getElementById('admAddAdminEmail').onclick = async ()=>{
@@ -2744,6 +2919,27 @@ function renderAdmin(){
     board.adminEmails.push(email);
     await saveBoard(); render();
   };
+  el.querySelectorAll('[data-restore-project]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const site = board.sites.find(s=>s.id===btn.dataset.restoreProject);
+      if(!site) return;
+      delete site.deletedAt;
+      delete site.deletedBy;
+      await saveBoard(); render();
+    };
+  });
+  el.querySelectorAll('[data-permadelete-project]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const site = board.sites.find(s=>s.id===btn.dataset.permadeleteProject);
+      if(!site) return;
+      const typed = window.prompt(`This permanently erases "${site.name}" and everything in it — this genuinely cannot be undone, not even by an Admin.\n\nType the project name exactly to confirm:`);
+      if(typed === null) return;
+      if(typed !== site.name){ window.alert("That didn't match — nothing was deleted."); return; }
+      board.sites = board.sites.filter(s=>s.id!==site.id);
+      delete board.siteData[site.id];
+      await saveBoard(); render();
+    };
+  });
   el.querySelectorAll('[data-del-admin-email]').forEach(btn=>{
     btn.onclick = async ()=>{
       board.adminEmails = board.adminEmails.filter(e=>e!==btn.dataset.delAdminEmail);
@@ -2836,6 +3032,13 @@ function renderAdmin(){
     await saveBoard(); render();
   };
 
+  const downloadSampleStakeholders = document.getElementById('downloadSampleStakeholders');
+  if(downloadSampleStakeholders) downloadSampleStakeholders.onclick = ()=>{
+    downloadSampleCsv(['Name','Email','Department','Level','Reports To','Approver'], [
+      ['Priya Nair','priya@paradisefoodcourt.in','Finance','Senior Manager','Jimmy','no'],
+      ['Vikram Shah','vikram@paradisefoodcourt.in','Legal','Manager','Abhik Mitra','no'],
+    ], 'sample-stakeholders.csv');
+  };
   const admShBulkBtn = document.getElementById('admShBulkBtn');
   if(admShBulkBtn) admShBulkBtn.onclick = async ()=>{
     const file = document.getElementById('admShBulkFile').files[0];
