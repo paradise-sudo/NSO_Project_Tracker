@@ -431,6 +431,8 @@
   </header>
 
   <main class="main-content">
+    <div id="projectListView" class="admin-wrap" style="display:none;"></div>
+    <button class="switch-link" id="backToProjectListBtn" style="margin:4px 0 8px;display:none;">‹ All Projects</button>
     <div class="store-tabs" id="storeTabs"></div>
     <div class="store-summary" id="storeSummary"></div>
     <div id="flow" class="loading">Loading board…</div>
@@ -595,6 +597,9 @@ const STAGE11_FINAL = [
 let board = null;
 let activeStore = null;
 let currentView = 'tracker';
+let trackerSubView = 'list'; // 'list' (all projects) | 'detail' (one project's stages) — Tracker always lands on the list first
+let stageViewMode = 'vertical'; // 'vertical' | 'horizontal' — user's own choice, remembered per device
+try{ const savedMode = localStorage.getItem('nsoStageViewMode'); if(savedMode) stageViewMode = savedMode; }catch(e){}
 let pendingReportsToResolve = []; // { personId, name } — imported rows whose "Reports To" text didn't auto-match
 
 // ---------- Onboarding tutorial ----------
@@ -978,9 +983,16 @@ function render(){
   document.getElementById('navCapex').classList.toggle('active', currentView==='capex');
   document.getElementById('navTemplates').classList.toggle('active', currentView==='templates');
   document.getElementById('navAdmin').classList.toggle('active', currentView==='admin');
-  document.getElementById('storeTabs').style.display = currentView==='tracker' ? 'flex' : 'none';
-  document.getElementById('storeSummary').style.display = currentView==='tracker' ? 'flex' : 'none';
-  document.getElementById('flow').style.display = currentView==='tracker' ? 'block' : 'none';
+  document.getElementById('storeTabs').style.display = (currentView==='tracker' && trackerSubView==='detail') ? 'flex' : 'none';
+  document.getElementById('storeSummary').style.display = (currentView==='tracker' && trackerSubView==='detail') ? 'flex' : 'none';
+  document.getElementById('flow').style.display = (currentView==='tracker' && trackerSubView==='detail') ? 'block' : 'none';
+  document.getElementById('backToProjectListBtn').style.display = (currentView==='tracker' && trackerSubView==='detail') ? 'inline-block' : 'none';
+  const inDetailView = currentView==='tracker' && trackerSubView==='detail';
+  const closeRowEl = document.getElementById('closeProjectRow');
+  if(closeRowEl) closeRowEl.style.display = inDetailView ? '' : 'none';
+  const deleteRowEl = document.getElementById('deleteProjectRow');
+  if(deleteRowEl) deleteRowEl.style.display = inDetailView ? '' : 'none';
+  document.getElementById('projectListView').style.display = (currentView==='tracker' && trackerSubView==='list') ? 'block' : 'none';
   document.getElementById('myTasksView').style.display = currentView==='myTasks' ? 'block' : 'none';
   document.getElementById('filesView').style.display = currentView==='files' ? 'block' : 'none';
   document.getElementById('capexView').style.display = currentView==='capex' ? 'block' : 'none';
@@ -989,8 +1001,12 @@ function render(){
 
   renderTabs();
   if(currentView === 'tracker'){
-    renderSummary();
-    renderFlow();
+    if(trackerSubView === 'list'){
+      renderProjectList();
+    } else {
+      renderSummary();
+      renderFlow();
+    }
   } else if(currentView === 'myTasks'){
     renderMyTasks();
   } else if(currentView === 'files'){
@@ -1170,6 +1186,7 @@ document.getElementById('replayTutorialBtn').onclick = ()=> replayTutorial();
 function goToAssignment(item){
   activeStore = item.siteId;
   currentView = 'tracker';
+  trackerSubView = 'detail';
   render();
   openSheet(item.stageId);
 }
@@ -1639,6 +1656,53 @@ function renderTabs(){
   });
 }
 
+// Tracker's own home — every project you can see, at a glance. Tapping one opens
+// its full stage-by-stage view; "All Projects" in the detail view brings you back here.
+function renderProjectList(){
+  const el = document.getElementById('projectListView');
+  const sites = visibleSites();
+  let html = `<div class="admin-section">
+    <h3>Your Projects</h3>
+    <div class="sub">${sites.length} project${sites.length===1?'':'s'} you have access to. Tap one to open it.</div>
+  </div>`;
+
+  if(sites.length === 0){
+    html += `<div class="empty-note">Nothing here yet — check Templates to start a new project.</div>`;
+  }
+
+  sites.forEach(site=>{
+    const s = storeState(site.id);
+    if(!s) return;
+    const curStage = STAGES.find(x=>x.id===s.current);
+    const curD = s.stageData[s.current];
+    const curT = curStage ? stageTiming(curStage, curD) : null;
+    const doneFinal = s.stageData[11] && s.stageData[11].status === 'done';
+    let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `${curStage.num} — ${curStage.title}` : '';
+    if(s.projectClosed){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Project Closed'; }
+    else if(doneFinal){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Store opened'; }
+    else if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
+    else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
+    if(curT && curT.isOverdue){ pillBg='#F3DCD8'; pillInk='#8A2E2E'; }
+    const draftTag = site.status === 'draft' ? `<span style="font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;">Draft</span>` : '';
+    html += `<div class="admin-row" data-open-project="${site.id}" style="cursor:pointer;flex-wrap:wrap;">
+      <div style="flex:1 1 100%;">
+        <div class="admin-row-main">${escapeHtml(site.name)} ${draftTag}</div>
+        <div class="admin-row-sub">${escapeHtml(FORMATS[site.format] ? FORMATS[site.format].label : '')} · ${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)}</div>
+      </div>
+      <div class="stage-pill" style="background:${pillBg};color:${pillInk};margin-top:6px;">${escapeHtml(label)}</div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+  el.querySelectorAll('[data-open-project]').forEach(row=>{
+    row.onclick = ()=>{
+      activeStore = row.dataset.openProject;
+      trackerSubView = 'detail';
+      render();
+    };
+  });
+}
+
 function renderSummary(){
   if(!activeStore || !getSite(activeStore)){ document.getElementById('storeSummary').innerHTML=''; return; }
   const s = storeState(activeStore);
@@ -1776,15 +1840,15 @@ function renderFlow(){
     }).join('') + `</div>`;
   }
 
-  html += '<div class="rail-line"></div>';
-  STAGES.forEach(st=>{
+  html += `<div style="display:flex;justify-content:flex-end;gap:8px;margin:0 0 10px;font-size:12px;">
+    <button type="button" id="viewModeVertical" class="switch-link" style="text-decoration:none;${stageViewMode==='vertical'?'font-weight:800;text-decoration:underline;':''}">☰ List</button>
+    <span style="color:var(--sub);">·</span>
+    <button type="button" id="viewModeHorizontal" class="switch-link" style="text-decoration:none;${stageViewMode==='horizontal'?'font-weight:800;text-decoration:underline;':''}">⬌ Timeline</button>
+  </div>`;
+
+  const stageMeta = STAGES.map(st=>{
     const d = s.stageData[st.id];
-    if(d.status === 'skip'){
-      html += `<div class="stage-row"><div class="stage-dot">–</div>
-        <div class="stage-card skip"><div class="stage-title">${st.num} · ${escapeHtml(st.title)}</div>
-        <div class="stage-owner">Not applicable — Chennai</div></div></div>`;
-      return;
-    }
+    if(d.status === 'skip') return { st, d, skip:true };
     const t = stageTiming(st, d);
     let dotCls = d.status;
     if(t && t.isOverdue) dotCls = 'overdue';
@@ -1799,28 +1863,72 @@ function renderFlow(){
       return p ? p.name : null;
     }).filter(Boolean);
     if(assignedNames.length) ownerText = `Assigned: ${assignedNames.join(', ')}`;
-    html += `<div class="stage-row" data-stage="${st.id}">
-      <div class="stage-dot ${dotCls}">${dotContent}</div>
-      <div class="stage-card ${d.status} ${t&&t.isOverdue?'overdue-card':''}">
+    return { st, d, t, dotCls, dotContent, statusLabel, slaBit, ownerText, skip:false };
+  });
+
+  const stageCardHtml = (m) => `<div class="stage-row" data-stage="${m.st.id}">
+      <div class="stage-dot ${m.dotCls}">${m.dotContent}</div>
+      <div class="stage-card ${m.d.status} ${m.t&&m.t.isOverdue?'overdue-card':''}">
         <div class="stage-top">
           <div>
-            <span class="stage-badge ${st.type}">${st.type}</span>
-            <div class="stage-title">${st.num} · ${escapeHtml(st.title)}</div>
+            <span class="stage-badge ${m.st.type}">${m.st.type}</span>
+            <div class="stage-title">${m.st.num} · ${escapeHtml(m.st.title)}</div>
           </div>
-          <div class="stage-dur ${t&&t.isOverdue?'overdue-dur':''}">${slaBit}</div>
+          <div class="stage-dur ${m.t&&m.t.isOverdue?'overdue-dur':''}">${m.slaBit}</div>
         </div>
-        <div class="stage-owner">${escapeHtml(ownerText)}</div>
-        <div class="stage-status ${t&&t.isOverdue?'overdue':d.status}">${statusLabel}${d.updatedBy ? ' · '+escapeHtml(d.updatedBy)+' · '+timeAgo(d.updatedAt) : ''}</div>
+        <div class="stage-owner">${escapeHtml(m.ownerText)}</div>
+        <div class="stage-status ${m.t&&m.t.isOverdue?'overdue':m.d.status}">${m.statusLabel}${m.d.updatedBy ? ' · '+escapeHtml(m.d.updatedBy)+' · '+timeAgo(m.d.updatedAt) : ''}</div>
       </div>
     </div>`;
-    if(d.status === 'declined' && st.reworkTo){
-      html += `<div class="restart-note">↩ restarted to Stage ${STAGES.find(x=>x.id===st.reworkTo).num} — ${escapeHtml(STAGES.find(x=>x.id===st.reworkTo).title)}</div>`;
+
+  if(stageViewMode === 'horizontal'){
+    html += `<div style="display:flex;overflow-x:auto;gap:4px;padding:8px 2px 14px;-webkit-overflow-scrolling:touch;">`;
+    stageMeta.forEach(m=>{
+      if(m.skip){
+        html += `<div style="flex:none;text-align:center;width:52px;">
+          <div class="stage-dot" style="margin:0 auto;">–</div>
+          <div style="font-size:9px;color:var(--sub);margin-top:4px;">${m.st.num}</div>
+        </div>`;
+        return;
+      }
+      html += `<div data-stage-h="${m.st.id}" style="flex:none;text-align:center;width:52px;cursor:pointer;">
+        <div class="stage-dot ${m.dotCls}" style="margin:0 auto;">${m.dotContent}</div>
+        <div style="font-size:9px;color:var(--sub);margin-top:4px;">${m.st.num}</div>
+      </div>`;
+    });
+    html += `</div>`;
+    const currentMeta = stageMeta.find(m=>!m.skip && m.st.id === s.current) || stageMeta.find(m=>!m.skip);
+    if(currentMeta){
+      html += `<div class="progress-line" style="margin-bottom:6px;">Showing the current stage — tap any dot above to view a different one.</div>`;
+      html += stageCardHtml(currentMeta);
     }
-  });
+  } else {
+    html += '<div class="rail-line"></div>';
+    stageMeta.forEach(m=>{
+      if(m.skip){
+        html += `<div class="stage-row"><div class="stage-dot">–</div>
+          <div class="stage-card skip"><div class="stage-title">${m.st.num} · ${escapeHtml(m.st.title)}</div>
+          <div class="stage-owner">Not applicable — Chennai</div></div></div>`;
+        return;
+      }
+      html += stageCardHtml(m);
+      if(m.d.status === 'declined' && m.st.reworkTo){
+        html += `<div class="restart-note">↩ restarted to Stage ${STAGES.find(x=>x.id===m.st.reworkTo).num} — ${escapeHtml(STAGES.find(x=>x.id===m.st.reworkTo).title)}</div>`;
+      }
+    });
+  }
+
   el.innerHTML = html;
   el.querySelectorAll('.stage-row[data-stage]').forEach(row=>{
     row.onclick = ()=> openSheet(parseInt(row.dataset.stage));
   });
+  el.querySelectorAll('[data-stage-h]').forEach(row=>{
+    row.onclick = ()=> openSheet(parseInt(row.dataset.stageH));
+  });
+  const vBtn = document.getElementById('viewModeVertical');
+  const hBtn = document.getElementById('viewModeHorizontal');
+  if(vBtn) vBtn.onclick = ()=>{ stageViewMode='vertical'; try{localStorage.setItem('nsoStageViewMode','vertical');}catch(e){} render(); };
+  if(hBtn) hBtn.onclick = ()=>{ stageViewMode='horizontal'; try{localStorage.setItem('nsoStageViewMode','horizontal');}catch(e){} render(); };
 }
 
 function openSheet(stageId){
@@ -2829,7 +2937,8 @@ function renderAdmin(){
   });
 }
 
-document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; render(); };
+document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; trackerSubView='list'; render(); };
+document.getElementById('backToProjectListBtn').onclick = ()=>{ trackerSubView='list'; render(); };
 document.getElementById('navMyTasks').onclick = ()=>{ currentView='myTasks'; render(); };
 document.getElementById('navFiles').onclick = ()=>{ currentView='files'; render(); };
 document.getElementById('navCapex').onclick = ()=>{ currentView='capex'; render(); };
@@ -3090,6 +3199,7 @@ function handleLanding(){
   if(pendingScopedLanding && board.siteData[pendingScopedLanding.siteId]){
     activeStore = pendingScopedLanding.siteId;
     currentView = 'tracker';
+    trackerSubView = 'detail';
     render();
     openSheet(pendingScopedLanding.stageId);
     pendingScopedLanding = null;
@@ -3101,6 +3211,7 @@ function handleLanding(){
   if(linkSite && linkStage && board.siteData[linkSite]){
     activeStore = linkSite;
     currentView = 'tracker';
+    trackerSubView = 'detail';
     render();
     openSheet(parseInt(linkStage));
     return; // arriving via a direct task link — don't interrupt with a tutorial
@@ -3114,6 +3225,7 @@ function handleLanding(){
     maybeStartTutorials();
   } else {
     currentView = 'tracker';
+    trackerSubView = 'list';
     render();
     maybeStartTutorials();
   }
