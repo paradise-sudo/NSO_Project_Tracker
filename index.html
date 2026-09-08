@@ -711,7 +711,7 @@ function makeSiteData(site){
     stageData[st.id] = { status: skip ? 'skip' : (st.id===STAGES[0].id ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
       startedAt: (st.id===STAGES[0].id && !skip && site.status !== 'draft') ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
     if(st.id === 3){
-      stageData[st.id].financials = { capex:'', m1Revenue:'', monthlyGrowthPct:'', y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+      stageData[st.id].financials = { capex:'', m1Revenue:'', monthlyGrowthByMonth:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
     }
     if(st.id === 11){
       stageData[st.id].tasks = {};       // { key: {done, actualDate, tentativeStart, tentativeEnd, assignedTo, updatedBy, updatedAt} }
@@ -910,7 +910,7 @@ function calcProjection(f){
   const capex = parseFloat(f.capex) || 0;
   const cogsPct = parseFloat(f.cogsPct) || 0;
   const fixedOpex = parseFloat(f.fixedOpex) || 0;
-  const monthlyGrowthPct = parseFloat(f.monthlyGrowthPct) || 0;
+  const monthlyGrowthByMonth = f.monthlyGrowthByMonth || {};
   const y2GrowthPct = parseFloat(f.y2GrowthPct) || 0;
   const y3GrowthPct = parseFloat(f.y3GrowthPct) || 0;
   let revenue = parseFloat(f.m1Revenue) || 0;
@@ -919,7 +919,7 @@ function calcProjection(f){
   let y = [ {rev:0, ebitda:0}, {rev:0, ebitda:0}, {rev:0, ebitda:0} ];
   for(let m=1; m<=36; m++){
     if(m>1){
-      if(m<=12) revenue = revenue * (1 + monthlyGrowthPct/100);
+      if(m<=12) revenue = revenue * (1 + (parseFloat(monthlyGrowthByMonth[m]) || 0)/100);
       else if(m===13) revenue = revenue * (1 + y2GrowthPct/100);
       else if(m===25) revenue = revenue * (1 + y3GrowthPct/100);
     }
@@ -2207,13 +2207,30 @@ function openSheet(stageId){
       inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
     }
   } else if(st.id === 3){
-    d.financials = d.financials || { capex:'', m1Revenue:'', monthlyGrowthPct:'', y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+    d.financials = d.financials || { capex:'', m1Revenue:'', monthlyGrowthByMonth:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
     const f = d.financials;
+    // Migrate old single "one growth % for all of M2-M12" into per-month values, so
+    // existing projects keep their exact same projection instead of resetting blank.
+    if(f.monthlyGrowthPct !== undefined && !f.monthlyGrowthByMonth){
+      f.monthlyGrowthByMonth = {};
+      for(let m=2; m<=12; m++) f.monthlyGrowthByMonth[m] = f.monthlyGrowthPct;
+      delete f.monthlyGrowthPct;
+    }
+    f.monthlyGrowthByMonth = f.monthlyGrowthByMonth || {};
     inner += `<div class="info-box">${s.capex && s.capex.finalized ? '✓ Tentative CapEx Finalized — see the CapEx tab for full detail (cost-list only).' : 'Tentative CapEx not yet finalized — see the CapEx tab.'}</div>`;
     inner += `
       <div class="field"><label>CAPEX — one-time investment (₹)</label><input id="fx_capex" type="number" value="${f.capex}" placeholder="e.g. 6000000"></div>
       <div class="field"><label>Month 1 revenue (₹)</label><input id="fx_m1" type="number" value="${f.m1Revenue}" placeholder="e.g. 800000"></div>
-      <div class="field"><label>Monthly growth, months 2–12 (%)</label><input id="fx_mg" type="number" value="${f.monthlyGrowthPct}" placeholder="e.g. 6"></div>
+      <div class="field">
+        <label>Monthly growth, each month vs. the one before it (%)</label>
+        <div style="display:flex;gap:4px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch;">
+          ${Array.from({length:11}, (_,i)=>i+2).map(m=>`
+            <div style="flex:none;width:52px;text-align:center;">
+              <div style="font-size:9px;color:var(--sub);margin-bottom:3px;">M${m}</div>
+              <input id="fx_mg_${m}" type="number" value="${f.monthlyGrowthByMonth[m] !== undefined ? f.monthlyGrowthByMonth[m] : ''}" placeholder="%" style="width:100%;font-size:11px;padding:6px 3px;text-align:center;">
+            </div>`).join('')}
+        </div>
+      </div>
       <div class="field"><label>Year 2 step-up (%)</label><input id="fx_y2" type="number" value="${f.y2GrowthPct}" placeholder="e.g. 15"></div>
       <div class="field"><label>Year 3 step-up (%)</label><input id="fx_y3" type="number" value="${f.y3GrowthPct}" placeholder="e.g. 12"></div>
       <div class="field"><label>COGS (% of revenue)</label><input id="fx_cogs" type="number" value="${f.cogsPct}" placeholder="e.g. 32"></div>
@@ -2381,10 +2398,15 @@ function openSheet(stageId){
 }
 
 function readFxInputs(){
+  const monthlyGrowthByMonth = {};
+  for(let m=2; m<=12; m++){
+    const el = document.getElementById(`fx_mg_${m}`);
+    if(el) monthlyGrowthByMonth[m] = el.value;
+  }
   return {
     capex: document.getElementById('fx_capex').value,
     m1Revenue: document.getElementById('fx_m1').value,
-    monthlyGrowthPct: document.getElementById('fx_mg').value,
+    monthlyGrowthByMonth,
     y2GrowthPct: document.getElementById('fx_y2').value,
     y3GrowthPct: document.getElementById('fx_y3').value,
     cogsPct: document.getElementById('fx_cogs').value,
