@@ -603,6 +603,13 @@ let trackerSubView = 'list'; // 'list' (all projects) | 'detail' (one project's 
 let stageViewMode = 'vertical'; // 'vertical' | 'horizontal' — user's own choice, remembered per device
 let slaEditorSiteId = null; // which project's SLA overrides are currently shown in Admin's SLA Settings
 let slaSectionOpen = false; // keeps the SLA Settings accordion open across re-renders once the user opens it
+let openAccordions = {}; // generalized version of the same idea — keyed by section id, for every other collapsible section
+function wireAccordionPersistence(container){
+  container.querySelectorAll('details[data-acc-key]').forEach(d=>{
+    if(openAccordions[d.dataset.accKey]) d.open = true;
+    d.addEventListener('toggle', ()=>{ openAccordions[d.dataset.accKey] = d.open; });
+  });
+}
 try{ const savedMode = localStorage.getItem('nsoStageViewMode'); if(savedMode) stageViewMode = savedMode; }catch(e){}
 let pendingReportsToResolve = []; // { personId, name } — imported rows whose "Reports To" text didn't auto-match
 
@@ -711,7 +718,7 @@ function makeSiteData(site){
     stageData[st.id] = { status: skip ? 'skip' : (st.id===STAGES[0].id ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
       startedAt: (st.id===STAGES[0].id && !skip && site.status !== 'draft') ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
     if(st.id === 3){
-      stageData[st.id].financials = { capex:'', m1Revenue:'', monthlyGrowthByMonth:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+      stageData[st.id].financials = { capex:'', dineInSteady:'', deliverySteady:'', dineInRamp:{}, deliveryRamp:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
     }
     if(st.id === 11){
       stageData[st.id].tasks = {};       // { key: {done, actualDate, tentativeStart, tentativeEnd, assignedTo, updatedBy, updatedAt} }
@@ -906,23 +913,38 @@ function levelLabel(level){ return level ? level : 'No title set'; }
 function getSite(id){ return board.sites.find(s=>s.id===id); }
 function storeState(id){ return board.siteData[id]; }
 
+// Walks backward from month m to find the most recently-specified ramp %, so a channel
+// that only has M1-M4 filled in naturally holds flat at M4's value for M5 onward,
+// without needing every later month manually filled with the same number.
+function effectiveRampPct(rampObj, m){
+  for(let i=m; i>=1; i--){
+    if(rampObj[i] !== undefined && rampObj[i] !== '' && !isNaN(parseFloat(rampObj[i]))) return parseFloat(rampObj[i]);
+  }
+  return 100; // nothing specified yet at all — assume full steady-state from day one
+}
+
 function calcProjection(f){
   const capex = parseFloat(f.capex) || 0;
   const cogsPct = parseFloat(f.cogsPct) || 0;
   const fixedOpex = parseFloat(f.fixedOpex) || 0;
-  const monthlyGrowthByMonth = f.monthlyGrowthByMonth || {};
+  const dineInSteady = parseFloat(f.dineInSteady) || 0;
+  const deliverySteady = parseFloat(f.deliverySteady) || 0;
+  const dineInRamp = f.dineInRamp || {};
+  const deliveryRamp = f.deliveryRamp || {};
   const y2GrowthPct = parseFloat(f.y2GrowthPct) || 0;
   const y3GrowthPct = parseFloat(f.y3GrowthPct) || 0;
-  let revenue = parseFloat(f.m1Revenue) || 0;
+  let revenue = 0;
   let cumulative = -capex;
   let paybackMonth = null;
   let y = [ {rev:0, ebitda:0}, {rev:0, ebitda:0}, {rev:0, ebitda:0} ];
   for(let m=1; m<=36; m++){
-    if(m>1){
-      if(m<=12) revenue = revenue * (1 + (parseFloat(monthlyGrowthByMonth[m]) || 0)/100);
-      else if(m===13) revenue = revenue * (1 + y2GrowthPct/100);
-      else if(m===25) revenue = revenue * (1 + y3GrowthPct/100);
-    }
+    if(m<=12){
+      // Each channel ramps independently against its own steady-state (mature) revenue,
+      // then holds flat once its ramp completes — Dine-in and Delivery are summed for
+      // the site's total revenue that month.
+      revenue = dineInSteady * effectiveRampPct(dineInRamp, m)/100 + deliverySteady * effectiveRampPct(deliveryRamp, m)/100;
+    } else if(m===13) revenue = revenue * (1 + y2GrowthPct/100);
+    else if(m===25) revenue = revenue * (1 + y3GrowthPct/100);
     const cogs = revenue * cogsPct/100;
     const ebitda = revenue - cogs - fixedOpex;
     cumulative += ebitda;
@@ -1055,6 +1077,23 @@ function stakeholderLabel(p){
   if(p.department) label += ' — ' + p.department;
   if(mgr) label += ` (reports to ${mgr.name})`;
   return label;
+}
+
+// Reusable searchable person-picker — a text input backed by a native <datalist>, so
+// typing filters the list instead of scrolling a giant dropdown. Renders the markup;
+// personPickerSelectedId() below reads back which person (if any) was actually chosen.
+function personPickerHtml(id, people, placeholder){
+  return `<input list="dl_${id}" id="${id}" placeholder="${placeholder||'Search and select...'}" autocomplete="off" style="width:100%;">
+    <datalist id="dl_${id}">
+      ${people.map(p=>`<option value="${escapeHtml(stakeholderLabel(p))}">`).join('')}
+    </datalist>`;
+}
+function personPickerSelectedId(id, people){
+  const el = document.getElementById(id);
+  if(!el) return null;
+  const typed = el.value.trim();
+  const match = people.find(p => stakeholderLabel(p) === typed);
+  return match ? match.id : null;
 }
 
 function findMyStakeholder(){
@@ -1570,23 +1609,27 @@ function renderTemplatesView(){
   board.templates.forEach(t=>{
     const owner = t.ownerId ? (board.stakeholders.find(p=>p.email===t.ownerId)||{}).name || t.ownerId : null;
     html += `<div class="admin-section">
-      <h3>${escapeHtml(t.name)}${t.builtIn?' <span class="admin-row-sub">(built-in)</span>':''}</h3>
-      <div class="sub">${escapeHtml(t.description||'')}</div>
-      ${owner ? `<div class="progress-line">Owned by ${escapeHtml(owner)}</div>` : ''}
-      <div class="field"><label>New project name</label><input id="newProjName_${t.id}" placeholder="e.g. Bangalore — Site 6"></div>
-      <div class="field"><label>City</label><select id="newProjCity_${t.id}">
-        ${board.cities.map(c=>`<option value="${c.code}">${escapeHtml(c.name)}</option>`).join('')}
-      </select></div>
-      <div class="field"><label>Format</label><select id="newProjFormat_${t.id}">
-        ${Object.keys(FORMATS).map(f=>`<option value="${f}">${escapeHtml(FORMATS[f].label)}</option>`).join('')}
-      </select></div>
-      <div class="btn-row"><button class="btn primary" data-create-project="${t.id}">Create Draft</button></div>
+      <details class="collapse-group" data-acc-key="tmpl_${t.id}">
+        <summary>${escapeHtml(t.name)}${t.builtIn?' <span style="font-weight:400;color:var(--sub);font-size:11px;">(built-in)</span>':''}</summary>
+        <div class="sub" style="margin-top:0;">${escapeHtml(t.description||'')}</div>
+        ${owner ? `<div class="progress-line">Owned by ${escapeHtml(owner)}</div>` : ''}
+        <div class="field"><label>New project name</label><input id="newProjName_${t.id}" placeholder="e.g. Bangalore — Site 6"></div>
+        <div class="field"><label>City</label><select id="newProjCity_${t.id}">
+          ${board.cities.map(c=>`<option value="${c.code}">${escapeHtml(c.name)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>Format</label><select id="newProjFormat_${t.id}">
+          ${Object.keys(FORMATS).map(f=>`<option value="${f}">${escapeHtml(FORMATS[f].label)}</option>`).join('')}
+        </select></div>
+        <div class="btn-row"><button class="btn primary" data-create-project="${t.id}">Create Draft</button></div>
+      </details>
     </div>`;
   });
 
   const myDrafts = board.sites.filter(s=>s.status==='draft' && s.ownerId===me);
-  html += `<div class="admin-section"><h3>Your Drafts</h3>
-    <div class="sub">Only you can see these until you publish — publishing makes them visible to whoever gets assigned.</div>`;
+  html += `<div class="admin-section">
+    <details class="collapse-group" data-acc-key="tmpl_drafts">
+      <summary>Your Drafts <span style="font-weight:400;color:var(--sub);font-size:11px;">${myDrafts.length}</span></summary>
+      <div class="sub" style="margin-top:0;">Only you can see these until you publish — publishing makes them visible to whoever gets assigned.</div>`;
   if(myDrafts.length === 0){
     html += `<div class="empty-note">No drafts right now.</div>`;
   } else {
@@ -1596,19 +1639,21 @@ function renderTemplatesView(){
         <button class="btn ghost" data-publish-draft="${s.id}" style="width:auto;">Publish</button>
       </div>`).join('');
   }
-  html += `</div>`;
+  html += `</details></div>`;
 
   if(isDeveloper()){
     const mySites = visibleSites();
     html += `<div class="admin-section">
-      <h3>Save a Project as a New Template</h3>
-      <div class="sub">Creates a new, reusable template entry from a project's basic info — Developer-only. All projects currently share one editable pipeline (see Stage Editor below) — independent pipelines per template aren't built yet.</div>
-      <div class="field"><label>Project</label><select id="saveTemplateSiteSelect">
-        ${mySites.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
-      </select></div>
-      <div class="field"><label>New template name</label><input id="saveTemplateName" placeholder="e.g. QSR Kiosk Opening"></div>
-      <div class="field"><label>Description</label><input id="saveTemplateDesc" placeholder="What kind of project is this for?"></div>
-      <div class="btn-row"><button class="btn primary" id="saveAsTemplateBtn">Save as Template</button></div>
+      <details class="collapse-group" data-acc-key="tmpl_saveAsTemplate">
+        <summary>Save a Project as a New Template</summary>
+        <div class="sub" style="margin-top:0;">Creates a new, reusable template entry from a project's basic info — Developer-only. All projects currently share one editable pipeline (see Stage Editor below) — independent pipelines per template aren't built yet.</div>
+        <div class="field"><label>Project</label><select id="saveTemplateSiteSelect">
+          ${mySites.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>New template name</label><input id="saveTemplateName" placeholder="e.g. QSR Kiosk Opening"></div>
+        <div class="field"><label>Description</label><input id="saveTemplateDesc" placeholder="What kind of project is this for?"></div>
+        <div class="btn-row"><button class="btn primary" id="saveAsTemplateBtn">Save as Template</button></div>
+      </details>
     </div>`;
 
     const myTemplates = board.templates.filter(t=>t.ownerId===me);
@@ -1630,9 +1675,10 @@ function renderTemplatesView(){
 
   if(isDeveloper() || isAdmin()){
     html += `<div class="admin-section">
-      <h3>Stage Editor</h3>
-      <div class="sub">This is the one shared pipeline every NSO project currently follows — add, edit, reorder, or remove a stage below and it applies everywhere immediately. Deleting a stage never erases any project's existing data for it, it just stops showing.</div>
-      ${STAGES.map((st,i)=>`
+      <details class="collapse-group" data-acc-key="tmpl_stageEditor">
+        <summary>Stage Editor <span style="font-weight:400;color:var(--sub);font-size:11px;">${STAGES.length} stages</span></summary>
+        <div class="sub" style="margin-top:0;">This is the one shared pipeline every NSO project currently follows — add, edit, reorder, or remove a stage below and it applies everywhere immediately. Deleting a stage never erases any project's existing data for it, it just stops showing.</div>
+        ${STAGES.map((st,i)=>`
         <div class="admin-row" style="flex-wrap:wrap;align-items:flex-start;">
           <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;margin-bottom:6px;">
             <span style="font-family:monospace;font-size:11px;color:var(--sub);width:24px;">${st.num}</span>
@@ -1656,19 +1702,21 @@ function renderTemplatesView(){
             <button class="remove-x" data-stage-delete="${st.id}" style="margin-left:auto;">✕</button>
           </div>
         </div>`).join('')}
-      <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
-        <label>New stage name</label><input id="newStageTitle" placeholder="e.g. Final Inspection">
-      </div>
-      <div class="field"><label>Type</label><select id="newStageType">
-        <option value="task">Task</option><option value="approval">Approval</option>
-        <option value="gate">Gate</option><option value="checklist">Checklist</option>
-      </select></div>
-      <div class="field"><label>SLA (days)</label><input id="newStageSla" type="number" placeholder="e.g. 7"></div>
-      <div class="btn-row"><button class="btn primary" id="addStageBtn">Add stage at the end</button></div>
+        <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+          <label>New stage name</label><input id="newStageTitle" placeholder="e.g. Final Inspection">
+        </div>
+        <div class="field"><label>Type</label><select id="newStageType">
+          <option value="task">Task</option><option value="approval">Approval</option>
+          <option value="gate">Gate</option><option value="checklist">Checklist</option>
+        </select></div>
+        <div class="field"><label>SLA (days)</label><input id="newStageSla" type="number" placeholder="e.g. 7"></div>
+        <div class="btn-row"><button class="btn primary" id="addStageBtn">Add stage at the end</button></div>
+      </details>
     </div>`;
   }
 
   el.innerHTML = html;
+  wireAccordionPersistence(el);
 
   const renumberAndSave = async ()=>{
     STAGES.forEach((st,i)=>{ st.num = String(i+1).padStart(2,'0'); });
@@ -2111,16 +2159,12 @@ function openSheet(stageId){
     inner += `<div class="progress-line">Nobody assigned yet.</div>`;
   }
   if(isAdmin()){
-    inner += `<select id="stageAssignAdd"><option value="">+ add someone</option>
-      ${board.stakeholders.filter(p=>!assignedIds.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(stakeholderLabel(p))}</option>`).join('')}
-    </select>`;
+    inner += personPickerHtml('stageAssignAdd', board.stakeholders.filter(p=>!assignedIds.includes(p.id)), '+ search and add someone');
   }
   inner += `</div>`;
   if(myId && assignedIds.includes(myId)){
     inner += `<div class="field"><label>Transfer my part to</label>
-      <select id="stageTransferTo"><option value="">— select someone —</option>
-        ${board.stakeholders.filter(p=>p.id!==myId).map(p=>`<option value="${p.id}">${escapeHtml(stakeholderLabel(p))}</option>`).join('')}
-      </select></div>
+      ${personPickerHtml('stageTransferTo', board.stakeholders.filter(p=>p.id!==myId), 'Search and select someone')}</div>
       <div class="btn-row"><button class="btn decline" id="stageTransferBtn">Transfer my part</button></div>`;
   }
   inner += `</details>`;
@@ -2167,10 +2211,7 @@ function openSheet(stageId){
   inner += `<details class="collapse-group"><summary>Flag a blocker <span style="font-weight:400;color:var(--sub);font-size:11px;">${d.blockerFlags.length ? d.blockerFlags.length+' flagged' : 'none flagged'}</span></summary>
     <div class="progress-line" style="margin-top:0;">Stuck because of someone else's work? Name them and it'll notify them and their manager.</div>
     <div class="field"><label>Who is blocking you?</label>
-      <select id="blockerPerson">
-        <option value="">— select —</option>
-        ${board.stakeholders.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
-      </select>
+      ${personPickerHtml('blockerPerson', board.stakeholders, 'Search and select...')}
     </div>
     <div class="field"><label>Notes</label><textarea id="blockerNote" placeholder="e.g. waiting on sign-off, they're on leave this week"></textarea></div>
     <div class="btn-row"><button class="btn decline" id="flagBlockerBtn">Flag blocker</button></div>`;
@@ -2207,30 +2248,46 @@ function openSheet(stageId){
       inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
     }
   } else if(st.id === 3){
-    d.financials = d.financials || { capex:'', m1Revenue:'', monthlyGrowthByMonth:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+    d.financials = d.financials || { capex:'', dineInSteady:'', deliverySteady:'', dineInRamp:{}, deliveryRamp:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
     const f = d.financials;
-    // Migrate old single "one growth % for all of M2-M12" into per-month values, so
-    // existing projects keep their exact same projection instead of resetting blank.
-    if(f.monthlyGrowthPct !== undefined && !f.monthlyGrowthByMonth){
-      f.monthlyGrowthByMonth = {};
-      for(let m=2; m<=12; m++) f.monthlyGrowthByMonth[m] = f.monthlyGrowthPct;
-      delete f.monthlyGrowthPct;
+    // Migrate the single-stream model (Month 1 revenue + one index curve) into the new
+    // two-channel shape — the old blended curve becomes the Dine-in channel unchanged
+    // (M1 was always the 100% reference point there), Delivery starts blank so the
+    // total revenue this produces is identical to before until it's split out for real.
+    if(f.monthlyIndexByMonth && !f.dineInRamp){
+      f.dineInSteady = f.m1Revenue || '';
+      f.dineInRamp = Object.assign({1: 100}, f.monthlyIndexByMonth);
+      f.deliverySteady = '';
+      f.deliveryRamp = {};
+      delete f.monthlyIndexByMonth;
+      delete f.m1Revenue;
     }
-    f.monthlyGrowthByMonth = f.monthlyGrowthByMonth || {};
+    f.dineInRamp = f.dineInRamp || {};
+    f.deliveryRamp = f.deliveryRamp || {};
+    const rampRow = (idPrefix, rampObj) => `
+      <div style="display:flex;gap:4px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch;">
+        ${Array.from({length:12}, (_,i)=>i+1).map(m=>`
+          <div style="flex:none;width:48px;text-align:center;">
+            <div style="font-size:9px;color:var(--sub);margin-bottom:3px;">M${m}</div>
+            <input id="${idPrefix}_${m}" type="number" value="${rampObj[m] !== undefined ? rampObj[m] : ''}" placeholder="%" style="width:100%;font-size:11px;padding:6px 3px;text-align:center;">
+          </div>`).join('')}
+      </div>`;
     inner += `<div class="info-box">${s.capex && s.capex.finalized ? '✓ Tentative CapEx Finalized — see the CapEx tab for full detail (cost-list only).' : 'Tentative CapEx not yet finalized — see the CapEx tab.'}</div>`;
     inner += `
       <div class="field"><label>CAPEX — one-time investment (₹)</label><input id="fx_capex" type="number" value="${f.capex}" placeholder="e.g. 6000000"></div>
-      <div class="field"><label>Month 1 revenue (₹)</label><input id="fx_m1" type="number" value="${f.m1Revenue}" placeholder="e.g. 800000"></div>
+
+      <div class="field"><label>Dine-in — steady-state monthly revenue (₹)</label><input id="fx_dinein_steady" type="number" value="${f.dineInSteady}" placeholder="e.g. 2800000"></div>
       <div class="field">
-        <label>Monthly growth, each month vs. the one before it (%)</label>
-        <div style="display:flex;gap:4px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch;">
-          ${Array.from({length:11}, (_,i)=>i+2).map(m=>`
-            <div style="flex:none;width:52px;text-align:center;">
-              <div style="font-size:9px;color:var(--sub);margin-bottom:3px;">M${m}</div>
-              <input id="fx_mg_${m}" type="number" value="${f.monthlyGrowthByMonth[m] !== undefined ? f.monthlyGrowthByMonth[m] : ''}" placeholder="%" style="width:100%;font-size:11px;padding:6px 3px;text-align:center;">
-            </div>`).join('')}
-        </div>
+        <label>Dine-in ramp — % of steady-state each month. Leave later months blank to hold flat at the last value entered.</label>
+        ${rampRow('fx_dinein_ramp', f.dineInRamp)}
       </div>
+
+      <div class="field"><label>Delivery — steady-state monthly revenue (₹)</label><input id="fx_delivery_steady" type="number" value="${f.deliverySteady}" placeholder="e.g. 1200000"></div>
+      <div class="field">
+        <label>Delivery ramp — % of steady-state each month. Leave later months blank to hold flat at the last value entered.</label>
+        ${rampRow('fx_delivery_ramp', f.deliveryRamp)}
+      </div>
+
       <div class="field"><label>Year 2 step-up (%)</label><input id="fx_y2" type="number" value="${f.y2GrowthPct}" placeholder="e.g. 15"></div>
       <div class="field"><label>Year 3 step-up (%)</label><input id="fx_y3" type="number" value="${f.y3GrowthPct}" placeholder="e.g. 12"></div>
       <div class="field"><label>COGS (% of revenue)</label><input id="fx_cogs" type="number" value="${f.cogsPct}" placeholder="e.g. 32"></div>
@@ -2306,14 +2363,10 @@ function openSheet(stageId){
                 ${isAdmin() ? `<button class="remove-x" data-task-remove-assignee="${item.key}|${p.id}">✕</button>` : ''}
               </div>`).join('') : `<div class="progress-line" style="margin:4px 0;">Nobody assigned yet.</div>`;
             if(isAdmin()){
-              html += `<select data-task-assign-add="${item.key}"><option value="">+ add someone</option>
-                ${board.stakeholders.filter(p=>!ids.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
-              </select>`;
+              html += personPickerHtml(`taskAssign_${item.key}`, board.stakeholders.filter(p=>!ids.includes(p.id)), '+ search and add someone');
             }
             if(myId2 && ids.includes(myId2)){
-              html += `<select data-task-transfer-to="${item.key}" style="margin-top:6px;"><option value="">— transfer my part to —</option>
-                ${board.stakeholders.filter(p=>p.id!==myId2).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
-              </select>
+              html += `<div style="margin-top:6px;">` + personPickerHtml(`taskTransfer_${item.key}`, board.stakeholders.filter(p=>p.id!==myId2), 'Search — transfer my part to...') + `</div>
               <button type="button" class="btn ghost" data-task-transfer-btn="${item.key}" style="margin-top:4px;width:100%;">Transfer</button>`;
             }
             return html;
@@ -2398,15 +2451,20 @@ function openSheet(stageId){
 }
 
 function readFxInputs(){
-  const monthlyGrowthByMonth = {};
-  for(let m=2; m<=12; m++){
-    const el = document.getElementById(`fx_mg_${m}`);
-    if(el) monthlyGrowthByMonth[m] = el.value;
+  const dineInRamp = {};
+  const deliveryRamp = {};
+  for(let m=1; m<=12; m++){
+    const dEl = document.getElementById(`fx_dinein_ramp_${m}`);
+    if(dEl) dineInRamp[m] = dEl.value;
+    const yEl = document.getElementById(`fx_delivery_ramp_${m}`);
+    if(yEl) deliveryRamp[m] = yEl.value;
   }
   return {
     capex: document.getElementById('fx_capex').value,
-    m1Revenue: document.getElementById('fx_m1').value,
-    monthlyGrowthByMonth,
+    dineInSteady: document.getElementById('fx_dinein_steady').value,
+    deliverySteady: document.getElementById('fx_delivery_steady').value,
+    dineInRamp,
+    deliveryRamp,
     y2GrowthPct: document.getElementById('fx_y2').value,
     y3GrowthPct: document.getElementById('fx_y3').value,
     cogsPct: document.getElementById('fx_cogs').value,
@@ -2416,8 +2474,8 @@ function readFxInputs(){
 function renderFxResults(f){
   const el = document.getElementById('fxResults');
   if(!el) return;
-  if(!(f.capex && f.m1Revenue)){
-    el.innerHTML = `<div class="progress-line">Fill in CAPEX and Month 1 revenue, then Calculate.</div>`;
+  if(!(f.capex && (f.dineInSteady || f.deliverySteady))){
+    el.innerHTML = `<div class="progress-line">Fill in CAPEX and at least one channel's steady-state revenue, then Calculate.</div>`;
     return;
   }
   const r = calcProjection(f);
@@ -2443,9 +2501,10 @@ function wireSheetActions(st, s, d){
 
   const addSel = document.getElementById('stageAssignAdd');
   if(addSel) addSel.onchange = async ()=>{
-    if(!addSel.value) return;
+    const selectedId = personPickerSelectedId('stageAssignAdd', board.stakeholders.filter(p=>!(d.assignedTo||[]).includes(p.id)));
+    if(!selectedId) return;
     d.assignedTo = d.assignedTo || [];
-    if(!d.assignedTo.includes(addSel.value)) d.assignedTo.push(addSel.value);
+    if(!d.assignedTo.includes(selectedId)) d.assignedTo.push(selectedId);
     d.updatedBy = getWho(); d.updatedAt = Date.now();
     await saveBoard(); render(); openSheet(st.id);
   };
@@ -2458,9 +2517,9 @@ function wireSheetActions(st, s, d){
   });
   const transferBtn = document.getElementById('stageTransferBtn');
   if(transferBtn) transferBtn.onclick = async ()=>{
-    const newId = document.getElementById('stageTransferTo').value;
-    if(!newId) return;
     const myId = (findMyStakeholder()||{}).id;
+    const newId = personPickerSelectedId('stageTransferTo', board.stakeholders.filter(p=>p.id!==myId));
+    if(!newId) return;
     const oldPerson = board.stakeholders.find(p=>p.id===myId);
     const newPerson = board.stakeholders.find(p=>p.id===newId);
     d.assignedTo = (d.assignedTo||[]).filter(x=>x!==myId);
@@ -2472,7 +2531,7 @@ function wireSheetActions(st, s, d){
 
   const flagBlockerBtn = document.getElementById('flagBlockerBtn');
   if(flagBlockerBtn) flagBlockerBtn.onclick = async ()=>{
-    const personId = document.getElementById('blockerPerson').value;
+    const personId = personPickerSelectedId('blockerPerson', board.stakeholders);
     const note = document.getElementById('blockerNote').value.trim();
     if(!personId || !note){
       if(!personId) document.getElementById('blockerPerson').focus();
@@ -2596,13 +2655,16 @@ function wireSheetActions(st, s, d){
       await saveBoard(); render(); openSheet(st.id);
     };
   });
-  document.querySelectorAll('[data-task-assign-add]').forEach(sel=>{
-    sel.onchange = async ()=>{
-      if(!sel.value) return;
-      const key = sel.dataset.taskAssignAdd;
+  STAGE11_TASKS.forEach(item=>{
+    const key = item.key;
+    const assignInput = document.getElementById(`taskAssign_${key}`);
+    if(assignInput) assignInput.onchange = async ()=>{
+      const ids = (d.tasks && d.tasks[key] && d.tasks[key].assignedTo) || [];
+      const selectedId = personPickerSelectedId(`taskAssign_${key}`, board.stakeholders.filter(p=>!ids.includes(p.id)));
+      if(!selectedId) return;
       d.tasks = d.tasks || {};
       if(!d.tasks[key]) d.tasks[key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
-      if(!d.tasks[key].assignedTo.includes(sel.value)) d.tasks[key].assignedTo.push(sel.value);
+      if(!d.tasks[key].assignedTo.includes(selectedId)) d.tasks[key].assignedTo.push(selectedId);
       await saveBoard(); render(); openSheet(st.id);
     };
   });
@@ -2616,10 +2678,9 @@ function wireSheetActions(st, s, d){
   document.querySelectorAll('[data-task-transfer-btn]').forEach(btn=>{
     btn.onclick = async ()=>{
       const key = btn.dataset.taskTransferBtn;
-      const sel = document.querySelector(`[data-task-transfer-to="${key}"]`);
-      const newId = sel ? sel.value : '';
-      if(!newId) return;
       const myId2 = (findMyStakeholder()||{}).id;
+      const newId = personPickerSelectedId(`taskTransfer_${key}`, board.stakeholders.filter(p=>p.id!==myId2));
+      if(!newId) return;
       const oldP = board.stakeholders.find(p=>p.id===myId2);
       const newP = board.stakeholders.find(p=>p.id===newId);
       d.tasks[key].assignedTo = (d.tasks[key].assignedTo||[]).filter(x=>x!==myId2);
@@ -2827,24 +2888,41 @@ function renderAdmin(){
         <div id="admShBulkStatus" class="progress-line"></div>
       </div>
 
-      ${board.stakeholders.map(p=>{
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+      <details class="collapse-group" data-acc-key="adminStakeholderList" style="width:100%;">
+        <summary>All Stakeholders <span style="font-weight:400;color:var(--sub);font-size:11px;">${board.stakeholders.length}</span></summary>
+        <input id="stakeholderSearchBox" placeholder="Search by name or department..." style="margin-top:10px;">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;" id="stakeholderCardGrid">
+        ${board.stakeholders.map(p=>{
         const manager = p.reportsTo ? board.stakeholders.find(x=>x.id===p.reportsTo) : null;
         return `
-        <div class="admin-row" style="flex-wrap:wrap;">
-          <div style="flex:1 1 100%;"><div class="admin-row-main">${escapeHtml(p.name)}</div>
-            <div class="admin-row-sub">${escapeHtml(p.department)}${manager ? ' · reports to '+escapeHtml(manager.name) : ''}</div></div>
-          <input data-email-edit="${p.id}" type="email" value="${escapeHtml(p.email||'')}" placeholder="add email — required for updates" style="flex:1;min-width:160px;font-size:11.5px;padding:6px 8px;margin-top:6px;${!p.email?'border-color:#E0A0A0;':''}">
-          <input data-level-edit="${p.id}" value="${escapeHtml(p.level||'')}" placeholder="level / designation" style="width:140px;font-size:11.5px;padding:6px 8px;margin-top:6px;">
-          <select data-reportsto-edit="${p.id}" style="width:auto;font-size:11px;padding:5px 6px;margin-top:6px;">
-            <option value="">— reports to —</option>
-            ${board.stakeholders.filter(x=>x.id!==p.id).map(x=>`<option value="${x.id}" ${x.id===p.reportsTo?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}
-          </select>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--sub);white-space:nowrap;margin-left:8px;margin-top:6px;">
-            <input type="checkbox" data-approver-edit="${p.id}" ${p.isApprover?'checked':''} style="width:auto;"> Approver
-          </label>
-          <button class="remove-x" data-del-sh="${p.id}">✕</button>
+        <div data-sh-card data-search-text="${escapeHtml((p.name+' '+p.department).toLowerCase())}" style="flex:1 1 220px;max-width:260px;border:1px solid var(--line);border-radius:8px;overflow:hidden;">
+          <div data-sh-card-toggle="${p.id}" style="padding:9px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;">
+            <div style="min-width:0;">
+              <div class="admin-row-main" style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.name)}</div>
+              <div class="admin-row-sub" style="font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.department)}${manager ? ' · '+escapeHtml(manager.name) : ''}${!p.email?' · no email':''}</div>
+            </div>
+            <span style="font-size:10px;color:var(--sub);flex:none;">${p.isApprover?'★ ':''}▾</span>
+          </div>
+          <div data-sh-card-body="${p.id}" style="display:none;padding:0 10px 10px;flex-direction:column;gap:6px;">
+            <input data-email-edit="${p.id}" type="email" value="${escapeHtml(p.email||'')}" placeholder="add email — required for updates" style="font-size:11.5px;padding:6px 8px;${!p.email?'border-color:#E0A0A0;':''}">
+            <input data-level-edit="${p.id}" value="${escapeHtml(p.level||'')}" placeholder="level / designation" style="font-size:11.5px;padding:6px 8px;">
+            <select data-reportsto-edit="${p.id}" style="font-size:11px;padding:5px 6px;">
+              <option value="">— reports to —</option>
+              ${board.stakeholders.filter(x=>x.id!==p.id).map(x=>`<option value="${x.id}" ${x.id===p.reportsTo?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}
+            </select>
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--sub);white-space:nowrap;">
+                <input type="checkbox" data-approver-edit="${p.id}" ${p.isApprover?'checked':''} style="width:auto;"> Approver
+              </label>
+              <button class="remove-x" data-del-sh="${p.id}">✕</button>
+            </div>
+          </div>
         </div>`;
       }).join('')}
+        </div>
+      </details>
+      </div>
     </div>
 
     ${pendingReportsToResolve.length ? `<div class="admin-section">
@@ -2934,6 +3012,8 @@ function renderAdmin(){
       })()}
     </div>
   `;
+
+  wireAccordionPersistence(el);
 
   document.getElementById('admAddAdminEmail').onclick = async ()=>{
     const email = document.getElementById('admNewAdminEmail').value.trim().toLowerCase();
@@ -3050,6 +3130,26 @@ function renderAdmin(){
       site.deletedBy = getWho();
       if(activeStore === id){ const vs = visibleSites(); activeStore = vs.length ? vs[0].id : null; }
       await saveBoard(); render();
+    };
+  });
+
+  const stakeholderSearchBox = document.getElementById('stakeholderSearchBox');
+  if(stakeholderSearchBox) stakeholderSearchBox.oninput = ()=>{
+    const q = stakeholderSearchBox.value.trim().toLowerCase();
+    document.querySelectorAll('[data-sh-card]').forEach(card=>{
+      const matches = !q || card.dataset.searchText.includes(q);
+      card.style.display = matches ? '' : 'none';
+      // Searching for someone usually means you want to see/edit them right away —
+      // auto-expand matches while a query is active, collapse everything once cleared.
+      const id = card.querySelector('[data-sh-card-toggle]').dataset.shCardToggle;
+      const body = document.querySelector(`[data-sh-card-body="${id}"]`);
+      if(body) body.style.display = (q && matches) ? 'flex' : 'none';
+    });
+  };
+  document.querySelectorAll('[data-sh-card-toggle]').forEach(toggle=>{
+    toggle.onclick = ()=>{
+      const body = document.querySelector(`[data-sh-card-body="${toggle.dataset.shCardToggle}"]`);
+      if(body) body.style.display = body.style.display === 'flex' ? 'none' : 'flex';
     };
   });
 
