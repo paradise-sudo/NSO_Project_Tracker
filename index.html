@@ -788,9 +788,11 @@ function migrateStageStructure(){
     });
   });
   if(board.stakeholders){
+    const legacyLevelLabels = {1:'Team Member', 2:'Manager', 3:'Senior Manager', 4:'Director', 5:'Leadership (MD/CFO/CXO)'};
     board.stakeholders.forEach(p=>{
       if(p.email === undefined){ p.email = ''; changed = true; }
       if(p.reportsTo === undefined){ p.reportsTo = null; changed = true; }
+      if(typeof p.level === 'number'){ p.level = legacyLevelLabels[p.level] || ''; changed = true; }
     });
   }
   if(changed) saveBoard();
@@ -801,7 +803,7 @@ async function saveBoard(){
   catch(e){ console.error('Firestore save failed', e); }
 }
 function getWho(){ return (currentUser && currentUser.name) || 'someone'; }
-function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 // Escapes text, then turns any URL back into a real clickable link — for notes/comments,
 // where someone might paste a Drive/Docs link and expect it to actually work.
 function escapeAndLinkify(s){
@@ -1663,6 +1665,7 @@ function renderSummary(){
   const targetText = opening ? `${opening.label} ${fmtDate(opening.value)}` : 'target TBD — pending construction start';
   const commentCount = (s.comments || []).length;
   const showCloseBtn = isAdmin() && doneFinal && !s.projectClosed;
+  const showDeleteBtn = isAdmin() || (site.ownerId && currentUser && site.ownerId === currentUser.email);
   el.innerHTML = `
     <div>
       <div class="name">${escapeHtml(site.name)}</div>
@@ -1698,6 +1701,27 @@ function renderSummary(){
       s.closedBy = getWho();
       s.closedAt = Date.now();
       await saveBoard();
+      render();
+    };
+  }
+
+  const oldDeleteRow = document.getElementById('deleteProjectRow');
+  if(oldDeleteRow) oldDeleteRow.remove();
+  if(showDeleteBtn){
+    const anchorEl = document.getElementById('closeProjectRow') || el;
+    anchorEl.insertAdjacentHTML('afterend', `<div id="deleteProjectRow" style="padding:0 14px 14px;">
+      <button class="btn ghost" id="deleteProjectBtn" style="width:100%;color:#8A2E2E;border-color:#8A2E2E;">Delete Project</button>
+    </div>`);
+    document.getElementById('deleteProjectBtn').onclick = async ()=>{
+      const typed = window.prompt(`This permanently deletes "${site.name}" and everything in it — stages, comments, CapEx, file references. This cannot be undone.\n\nType the project name exactly to confirm:`);
+      if(typed === null) return;
+      if(typed !== site.name){ window.alert("That didn't match — nothing was deleted."); return; }
+      board.sites = board.sites.filter(x=>x.id!==site.id);
+      delete board.siteData[site.id];
+      await saveBoard();
+      const vs = visibleSites();
+      activeStore = vs.length ? vs[0].id : null;
+      currentView = 'tracker';
       render();
     };
   }
@@ -1818,7 +1842,8 @@ function openSheet(stageId){
   const assignedIds = d.assignedTo || [];
   const assignedList = assignedIds.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
 
-  inner += `<div class="field"><label>Assigned to</label>`;
+  inner += `<details class="collapse-group" open><summary>Assigned to <span style="font-weight:400;color:var(--sub);font-size:11px;">${assignedList.length ? assignedList.length+' people' : 'nobody yet'}</span></summary>`;
+  inner += `<div class="field">`;
   if(assignedList.length){
     inner += `<div class="approver-list">` + assignedList.map(p=>`
       <div class="approver">
@@ -1841,6 +1866,7 @@ function openSheet(stageId){
       </select></div>
       <div class="btn-row"><button class="btn decline" id="stageTransferBtn">Transfer my part</button></div>`;
   }
+  inner += `</details>`;
   if(st.warning) inner += `<div class="warn">⚠ ${escapeHtml(st.warning)}</div>`;
 
   const t = stageTiming(st, d);
@@ -1857,7 +1883,7 @@ function openSheet(stageId){
   }
 
   d.attachments = d.attachments || [];
-  inner += `<h3 style="font-family:'Inter',sans-serif;font-size:14px;margin:16px 0 6px;">Attachments</h3>`;
+  inner += `<details class="collapse-group"><summary>Attachments <span style="font-weight:400;color:var(--sub);font-size:11px;">${d.attachments.length ? d.attachments.length+' files' : 'none yet'}</span></summary>`;
   if(d.attachments.length){
     inner += `<div class="approver-list">` + d.attachments.map((a,i)=>{
       const canDelete = a.uploadedBy === getWho() || isAdmin();
@@ -1874,13 +1900,14 @@ function openSheet(stageId){
   } else {
     inner += `<div class="progress-line">No files yet.</div>`;
   }
-  inner += `<div class="field"><input id="attachmentFile" type="file"></div>
-    <div class="progress-line" style="margin-top:0;">Files over 25MB will still upload here, but won't be attached to the email trail — the update email will just link back to the project instead.</div>
+  inner += `<div class="field"><input id="attachmentFile" type="file" multiple></div>
+    <div class="progress-line" style="margin-top:0;">Select multiple files at once if you want — each uploads and gets its own entry. Files over 25MB will still upload here, but won't be attached to the email trail — the update email will just link back to the project instead.</div>
     <div class="btn-row"><button class="btn ghost" id="uploadAttachmentBtn">Upload</button></div>
     <div id="uploadStatus" class="progress-line"></div>`;
+  inner += `</details>`;
 
   d.blockerFlags = d.blockerFlags || [];
-  inner += `<h3 style="font-family:'Inter',sans-serif;font-size:14px;margin:16px 0 6px;">Flag a blocker</h3>
+  inner += `<details class="collapse-group"><summary>Flag a blocker <span style="font-weight:400;color:var(--sub);font-size:11px;">${d.blockerFlags.length ? d.blockerFlags.length+' flagged' : 'none flagged'}</span></summary>
     <div class="progress-line" style="margin-top:0;">Stuck because of someone else's work? Name them and it'll notify them and their manager.</div>
     <div class="field"><label>Who is blocking you?</label>
       <select id="blockerPerson">
@@ -1896,6 +1923,7 @@ function openSheet(stageId){
       return `Blocked by ${person ? escapeHtml(person.name) : 'someone'}: "${escapeAndLinkify(b.note)}" — flagged by ${escapeHtml(b.by)}, ${timeAgo(b.at)}`;
     }).join('<br>') + `</div>`;
   }
+  inner += `</details>`;
 
   if(st.type === 'approval'){
     d.approvals = d.approvals || {};
@@ -2183,33 +2211,41 @@ function wireSheetActions(st, s, d){
   const uploadBtn = document.getElementById('uploadAttachmentBtn');
   const fileInputEl = document.getElementById('attachmentFile');
   if(fileInputEl) fileInputEl.onchange = ()=>{
-    const f = fileInputEl.files[0];
+    const files = Array.from(fileInputEl.files);
     const statusEl = document.getElementById('uploadStatus');
-    if(f && f.size > 25*1024*1024){
-      statusEl.textContent = `⚠ "${f.name}" is ${(f.size/1024/1024).toFixed(1)}MB — over the 25MB email limit. It'll still upload here, but the update email will only link to it, not attach it.`;
+    const oversized = files.filter(f => f.size > 25*1024*1024);
+    if(oversized.length){
+      const names = oversized.map(f => `"${f.name}" (${(f.size/1024/1024).toFixed(1)}MB)`).join(', ');
+      statusEl.textContent = `⚠ Over the 25MB email limit: ${names}. They'll still upload here, but the update email will only link to them, not attach them.`;
     } else if(statusEl){
-      statusEl.textContent = '';
+      statusEl.textContent = files.length > 1 ? `${files.length} files selected.` : '';
     }
   };
   if(uploadBtn) uploadBtn.onclick = async ()=>{
     const fileInput = document.getElementById('attachmentFile');
-    const file = fileInput.files[0];
+    const files = Array.from(fileInput.files);
     const statusEl = document.getElementById('uploadStatus');
-    if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
-    const oversized = file.size > 25*1024*1024;
-    statusEl.textContent = oversized ? 'Uploading… (over 25MB — won\'t be attached to the email, just linked)' : 'Uploading…';
-    try{
-      const path = `sites/${activeStore}/stage${st.id}/${Date.now()}_${file.name}`;
-      const ref = storage.ref(path);
-      await ref.put(file);
-      const url = await ref.getDownloadURL();
-      d.attachments = d.attachments || [];
-      d.attachments.push({ name: file.name, url, path, uploadedBy: getWho(), uploadedAt: Date.now(), sizeBytes: file.size, oversized });
-      await saveBoard();
-      render(); openSheet(st.id);
-    }catch(e){
-      statusEl.textContent = 'Upload failed: ' + (e.message || e.code);
+    if(!files.length){ statusEl.textContent = 'Choose at least one file first.'; return; }
+    d.attachments = d.attachments || [];
+    let uploaded = 0;
+    for(const file of files){
+      const oversized = file.size > 25*1024*1024;
+      statusEl.textContent = `Uploading ${uploaded+1} of ${files.length}${oversized ? ' (over 25MB — won\'t be attached to the email, just linked)' : ''}...`;
+      try{
+        const path = `sites/${activeStore}/stage${st.id}/${Date.now()}_${file.name}`;
+        const ref = storage.ref(path);
+        await ref.put(file);
+        const url = await ref.getDownloadURL();
+        d.attachments.push({ name: file.name, url, path, uploadedBy: getWho(), uploadedAt: Date.now(), sizeBytes: file.size, oversized });
+        uploaded++;
+      }catch(e){
+        statusEl.textContent = `Upload failed on "${file.name}": ` + (e.message || e.code);
+        if(uploaded > 0) await saveBoard();
+        return;
+      }
     }
+    await saveBoard();
+    render(); openSheet(st.id);
   };
   document.querySelectorAll('[data-preview]').forEach(el=>{
     el.onclick = ()=>{
