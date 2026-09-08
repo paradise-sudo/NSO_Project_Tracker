@@ -2172,7 +2172,7 @@ function openSheet(stageId){
 
   const t = stageTiming(st, d, activeStore);
   if(t){
-    inner += `<div class="meta" style="margin-top:-6px;">Day ${t.elapsedDays} of ${t.sla}d SLA${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
+    inner += `<div class="meta" style="margin-top:8px;">Day ${t.elapsedDays} of ${t.sla}d SLA${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
   }
   if(t && t.isOverdue){
     inner += `<div class="warn">⚠ This stage is ${t.overdueDays} day(s) past its SLA.
