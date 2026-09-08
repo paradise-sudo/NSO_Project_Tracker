@@ -602,6 +602,7 @@ let currentView = 'tracker';
 let trackerSubView = 'list'; // 'list' (all projects) | 'detail' (one project's stages) — Tracker always lands on the list first
 let stageViewMode = 'vertical'; // 'vertical' | 'horizontal' — user's own choice, remembered per device
 let slaEditorSiteId = null; // which project's SLA overrides are currently shown in Admin's SLA Settings
+let slaSectionOpen = false; // keeps the SLA Settings accordion open across re-renders once the user opens it
 try{ const savedMode = localStorage.getItem('nsoStageViewMode'); if(savedMode) stageViewMode = savedMode; }catch(e){}
 let pendingReportsToResolve = []; // { personId, name } — imported rows whose "Reports To" text didn't auto-match
 
@@ -2856,7 +2857,7 @@ function renderAdmin(){
     </div>
 
     <div class="admin-section" id="adminSlaSection">
-      <details class="collapse-group">
+      <details class="collapse-group" ${slaSectionOpen ? 'open' : ''}>
         <summary>SLA Settings <span style="font-weight:400;color:var(--sub);font-size:11px;">Admin only</span></summary>
         <div class="sub" style="margin-top:0;">Each project can have its own SLA — pick one below, then override any stage or task just for it. Leave blank to use the built-in default.</div>
         <div class="field"><label>Project</label>
@@ -2975,12 +2976,23 @@ function renderAdmin(){
     };
   });
 
-  document.getElementById('admSaveSla').onclick = async ()=>{
+  const slaProjectPicker = document.getElementById('slaProjectPicker');
+  if(slaProjectPicker) slaProjectPicker.onchange = ()=>{
+    slaEditorSiteId = slaProjectPicker.value || null;
+    slaSectionOpen = true;
+    render();
+  };
+  const slaDetailsEl = document.querySelector('#adminSlaSection details');
+  if(slaDetailsEl) slaDetailsEl.addEventListener('toggle', ()=>{ slaSectionOpen = slaDetailsEl.open; });
+  const admSaveSlaBtn = document.getElementById('admSaveSla');
+  if(admSaveSlaBtn) admSaveSlaBtn.onclick = async ()=>{
+    if(!slaEditorSiteId) return;
+    if(!board.slaOverrides[slaEditorSiteId]) board.slaOverrides[slaEditorSiteId] = {};
     el.querySelectorAll('[data-sla-override]').forEach(inp=>{
       const key = inp.dataset.slaOverride;
       const val = inp.value.trim();
-      if(val === '') delete board.slaOverrides[key];
-      else board.slaOverrides[key] = parseInt(val);
+      if(val === '') delete board.slaOverrides[slaEditorSiteId][key];
+      else board.slaOverrides[slaEditorSiteId][key] = parseInt(val);
     });
     await saveBoard(); render();
   };
