@@ -212,8 +212,8 @@
   .mini-task-card.overdue-card{border-color:#E0A0A0;background:var(--gate-bg);}
   .mini-task-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
   .mini-task-label{font-weight:600;font-size:13px;color:var(--ink);}
-  .mini-task-sla{font-size:10.5px;color:var(--sub);white-space:nowrap;}
-  .mini-task-sla.overdue-dur{color:#8A2E2E;font-weight:700;}
+  .mini-task-tat{font-size:10.5px;color:var(--sub);white-space:nowrap;}
+  .mini-task-tat.overdue-dur{color:#8A2E2E;font-weight:700;}
   .mini-task-row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;}
   .mini-task-check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink);white-space:nowrap;}
   .mini-task-check input{width:auto;}
@@ -495,9 +495,30 @@ const createAccountFn = functionsClient.httpsCallable('createAccount');
 const loginFn = functionsClient.httpsCallable('login');
 const redeemScopedLinkFn = functionsClient.httpsCallable('redeemScopedLink');
 const resetPasswordFn = functionsClient.httpsCallable('resetPassword');
+const addAdminFn = functionsClient.httpsCallable('addAdmin');
+const removeAdminFn = functionsClient.httpsCallable('removeAdmin');
+const addDeveloperFn = functionsClient.httpsCallable('addDeveloper');
+const removeDeveloperFn = functionsClient.httpsCallable('removeDeveloper');
+const toggleApprovalFn = functionsClient.httpsCallable('toggleApproval');
+const finalizeCapexFn = functionsClient.httpsCallable('finalizeCapex');
+const setCapexActualFn = functionsClient.httpsCallable('setCapexActual');
+const bulkSetCapexActualsFn = functionsClient.httpsCallable('bulkSetCapexActuals');
+const closeProjectFn = functionsClient.httpsCallable('closeProject');
+const saveStagePipelineFn = functionsClient.httpsCallable('saveStagePipeline');
+const setApproverEligibilityFn = functionsClient.httpsCallable('setApproverEligibility');
+const setApprovalPanelSeatFn = functionsClient.httpsCallable('setApprovalPanelSeat');
 const storage = firebase.storage();
 const BOARD_DOC = db.collection('nso').doc('board');
 let unsubscribeBoard = null;
+let unsubscribeRoles = null;
+// Admin/Developer role lists now live in their own locked Firestore collection
+// (roles/admins, roles/developers) instead of inside the main board document — a
+// signed-in user can no longer grant themselves either role by writing directly to
+// Firestore, since that collection denies all client writes (see firestore.rules).
+// Only the addAdmin/removeAdmin/addDeveloper/removeDeveloper Cloud Functions can
+// change these, and each one re-checks the caller's own role server-side first.
+let adminEmailsList = [];
+let developerEmailsList = [];
 let pendingNewUserEmail = null; // set while we're waiting on a first-time user's name
 
 const FORMATS = {
@@ -513,54 +534,54 @@ const STAGE4_REQUIRED_LEVEL = 4; // kept for reference/labeling only — panel e
 // function reads this variable by name at call time (not a snapshot), reassigning it here
 // is enough to make the whole app stage-editable without touching every call site.
 let STAGES = [
-  {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', slaDays:14,
+  {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', tatMinDays:0, tatMaxDays:14,
    desc:'Physical scouting within identified markets.',
    warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
-  {id:3, num:'03', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', slaDays:5,
+  {id:3, num:'03', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5,
    desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
-  {id:4, num:'04', title:'Site Visit + Sign-Off', type:'approval', owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', slaDays:10,
+  {id:4, num:'04', title:'Site Visit + Sign-Off', type:'approval', owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10,
    desc:'All 5 panel members must physically visit the site. P&L reviewed on-site. No partial approvals — all 5 must sign off within the 10-day window.',
    reworkTo:2},
-  {id:5, num:'05', title:'Feasibility + Service Req + CAPEX', type:'task', owner:'Ayush + Renuka + Sandeep', duration:'1 Week', slaDays:7,
+  {id:5, num:'05', title:'Feasibility + Service Req + CAPEX', type:'task', owner:'Ayush + Renuka + Sandeep', duration:'1 Week', tatMinDays:0, tatMaxDays:7, parallelGroup:'g1',
    desc:'Detailed feasibility study, service requirements mapped, final CAPEX estimated and approved. Runs in parallel with electrical load confirmation.'},
-  {id:6, num:'06', title:'Electrical Load Confirmation', type:'gate', owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', slaDays:14, bangaloreOnly:true,
+  {id:6, num:'06', title:'Electrical Load Confirmation', type:'gate', owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', tatMinDays:0, tatMaxDays:14, bangaloreOnly:true, parallelGroup:'g1',
    desc:'Landlord must confirm electrical load in writing before the LOI can be signed.',
    warning:'HARD GATE — Bangalore specific. LOI cannot be signed until load is confirmed in writing. New buildings strictly avoided. No exceptions.',
    reworkTo:2},
-  {id:7, num:'07', title:'LOI Signing + Rent Structure', type:'task', owner:'Ayush + Finance', duration:'Post load confirm', slaDays:14,
+  {id:7, num:'07', title:'LOI Signing + Rent Structure', type:'task', owner:'Ayush + Finance', duration:'Post load confirm', tatMinDays:0, tatMaxDays:14,
    desc:'LOI / term sheet signed post load confirmation. Legal (Gunjan) initiates Agreement documentation in parallel — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution.'},
-  {id:8, num:'08', title:'Security Deposit', type:'task', owner:'Ayush + Finance', duration:'1 Day', slaDays:1,
+  {id:8, num:'08', title:'Security Deposit', type:'task', owner:'Ayush + Finance', duration:'1 Day', tatMinDays:0, tatMaxDays:1,
    desc:'Security deposit paid to landlord post LOI signing.'},
-  {id:9, num:'09', title:'Agreement Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'14 Days', slaDays:14,
+  {id:9, num:'09', title:'Agreement Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'14 Days', tatMinDays:0, tatMaxDays:14,
    desc:'Lease agreement executed — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution finalised.'},
-  {id:10, num:'10', title:'Registration Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'35 Days', slaDays:35,
+  {id:10, num:'10', title:'Registration Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'35 Days', tatMinDays:0, tatMaxDays:35,
    desc:'Lease agreement registered.'},
-  {id:11, num:'11', title:'Post-LOI Execution', type:'checklist', owner:'All Workstream Owners', duration:'~54 Days', slaDays:54,
+  {id:11, num:'11', title:'Post-LOI Execution', type:'checklist', owner:'All Workstream Owners', duration:'~54 Days', tatMinDays:0, tatMaxDays:54,
    desc:'Construction, hiring, licensing, equipment delivery, and design specs — running in parallel from Construction Start through Snags Sign-Off, per the NSO Projects 2026–27 tracker.'},
 ];
 
 // ---- Stage 11 checklist item definitions (from NSO Projects 2026–27, rows 3 & 4) ----
-// Tasks: real SLA targets, days counted from Construction Start (the stage's startedAt)
+// Tasks: real TAT targets, days counted from Construction Start (the stage's startedAt)
 const STAGE11_TASKS = [
-  {key:'constructionStart', label:'Construction Start', slaDays:0},
-  {key:'equipmentIndent', label:"Equipment's Indent", slaDays:2},
-  {key:'storeTeamHiring', label:'Store Team Hiring', slaDays:20},
-  {key:'training', label:'Training', slaDays:40},
-  {key:'marketingPlan', label:'Marketing Plan', slaDays:42},
-  {key:'gstCertificate', label:'GST Certificate', slaDays:40},
-  {key:'licenses', label:'Licenses (Trade, FSSAI, Labour)', slaDays:40},
-  {key:'edcMachine', label:'EDC Machine', slaDays:45},
-  {key:'itAppSetup', label:'IT Application Setup', slaDays:42},
-  {key:'itInfraSetup', label:'IT Infra Setup', slaDays:43},
-  {key:'visiCooler', label:'Visi Cooler', slaDays:40},
-  {key:'llPendencies', label:'LL Pendencies', slaDays:25},
-  {key:'maintenanceVisit', label:'Maintenance Visit', slaDays:35},
-  {key:'maintenanceHandover', label:'Proposed Maintenance Handover', slaDays:47},
-  {key:'opsHandover', label:'Proposed Operations Handover', slaDays:48},
-  {key:'standardOpening', label:'Standard Opening Date', slaDays:50},
-  {key:'snagsSignOff', label:'Snags Sign-Off', slaDays:54},
+  {key:'constructionStart', label:'Construction Start', tatMinDays:0, tatMaxDays:0},
+  {key:'equipmentIndent', label:"Equipment's Indent", tatMinDays:0, tatMaxDays:2},
+  {key:'storeTeamHiring', label:'Store Team Hiring', tatMinDays:0, tatMaxDays:20},
+  {key:'training', label:'Training', tatMinDays:0, tatMaxDays:40},
+  {key:'marketingPlan', label:'Marketing Plan', tatMinDays:0, tatMaxDays:42},
+  {key:'gstCertificate', label:'GST Certificate', tatMinDays:0, tatMaxDays:40},
+  {key:'licenses', label:'Licenses (Trade, FSSAI, Labour)', tatMinDays:0, tatMaxDays:40},
+  {key:'edcMachine', label:'EDC Machine', tatMinDays:0, tatMaxDays:45},
+  {key:'itAppSetup', label:'IT Application Setup', tatMinDays:0, tatMaxDays:42},
+  {key:'itInfraSetup', label:'IT Infra Setup', tatMinDays:0, tatMaxDays:43},
+  {key:'visiCooler', label:'Visi Cooler', tatMinDays:0, tatMaxDays:40},
+  {key:'llPendencies', label:'LL Pendencies', tatMinDays:0, tatMaxDays:25},
+  {key:'maintenanceVisit', label:'Maintenance Visit', tatMinDays:0, tatMaxDays:35},
+  {key:'maintenanceHandover', label:'Proposed Maintenance Handover', tatMinDays:0, tatMaxDays:47},
+  {key:'opsHandover', label:'Proposed Operations Handover', tatMinDays:0, tatMaxDays:48},
+  {key:'standardOpening', label:'Standard Opening Date', tatMinDays:0, tatMaxDays:50},
+  {key:'snagsSignOff', label:'Snags Sign-Off', tatMinDays:0, tatMaxDays:54},
 ];
-// Design specs: one-time data capture, no SLA
+// Design specs: one-time data capture, no TAT
 const STAGE11_DESIGN = [
   {key:'totalCarpetArea', label:'Total Carpet Area (sqft)'},
   {key:'bohArea', label:'BOH Area (sqft)'},
@@ -601,8 +622,8 @@ let activeStore = null;
 let currentView = 'tracker';
 let trackerSubView = 'list'; // 'list' (all projects) | 'detail' (one project's stages) — Tracker always lands on the list first
 let stageViewMode = 'vertical'; // 'vertical' | 'horizontal' — user's own choice, remembered per device
-let slaEditorSiteId = null; // which project's SLA overrides are currently shown in Admin's SLA Settings
-let slaSectionOpen = false; // keeps the SLA Settings accordion open across re-renders once the user opens it
+let slaEditorSiteId = null; // which project's TAT overrides are currently shown in Admin's TAT Settings
+let slaSectionOpen = false; // keeps the TAT Settings accordion open across re-renders once the user opens it
 let openAccordions = {}; // generalized version of the same idea — keyed by section id, for every other collapsible section
 function wireAccordionPersistence(container){
   container.querySelectorAll('details[data-acc-key]').forEach(d=>{
@@ -626,26 +647,28 @@ const GENERAL_TUTORIAL_STEPS = [
 const ADMIN_TUTORIAL_STEPS = [
   { view:'admin', selector:'#adminRolesSection', title:'Roles', text:'Add other Admins or Developers here — no code changes needed.' },
   { view:'admin', selector:'#adminStakeholdersSection', title:'Stakeholders', text:'Add your team one at a time or bulk-upload a CSV — set who reports to whom for notifications.' },
-  { view:'admin', selector:'#adminSlaSection', title:'SLA Settings', text:'Override the default deadline for any stage or Post-LOI task here.' },
+  { view:'admin', selector:'#adminSlaSection', title:'TAT Settings', text:'Override the default turnaround-time range for any stage or Post-LOI task here.' },
   { view:'capex', selector:'.admin-section', title:'CapEx', text:"Assign who builds the tentative budget and who reconciles actual costs — visible only to people on that site's cost list." },
 ];
 
 // ROOT_ADMIN_EMAILS is a permanent, code-level fallback — it can never be removed through
-// the UI, so a mistake in the Firestore-editable admin list can never lock everyone out.
-// board.adminEmails / board.developerEmails hold everyone ELSE with those roles, editable
-// from Admin → Roles instead of by editing this file.
+// the UI, so a mistake in the roles list can never lock everyone out. Everyone else with
+// these roles lives in roles/admins and roles/developers — a Firestore collection that
+// denies all direct client writes (see firestore.rules); only the addAdmin/removeAdmin/
+// addDeveloper/removeDeveloper Cloud Functions can change it, each re-checking the
+// caller's own current role server-side first. This closes the gap where any signed-in
+// user could previously grant themselves either role by writing straight to Firestore.
 const ROOT_ADMIN_EMAILS = ['kumar.ayush@paradisefoodcourt.in'];
 function isAdmin(){
   if(!currentUser) return false;
   const email = currentUser.email.toLowerCase();
-  return ROOT_ADMIN_EMAILS.includes(email) || (board && board.adminEmails && board.adminEmails.includes(email));
+  return ROOT_ADMIN_EMAILS.includes(email) || adminEmailsList.includes(email);
 }
-// Developer tier — defined now so it's ready for future structural features (editing,
-// reordering, or inserting stages). No developer-only capability exists yet.
+// Developer tier — can edit the shared stage pipeline (Templates → Stage Editor).
 function isDeveloper(){
   if(!currentUser) return false;
   const email = currentUser.email.toLowerCase();
-  return board && board.developerEmails && board.developerEmails.includes(email);
+  return developerEmailsList.includes(email);
 }
 // Cost visibility is UI-level only (same trust model as the rest of this tool) — admin,
 // or explicitly added to a site's cost-visible list, or one of that site's CapEx assignees.
@@ -707,7 +730,7 @@ function defaultBoard(){
     cities: [{code:'BLR', name:'Bangalore'}, {code:'CHN', name:'Chennai'}],
     adminEmails: [], developerEmails: [],
     templates: seedTemplates,
-    slaOverrides: {}, // { 'stage_<id>': days } or { 'task_<key>': days } — overrides the built-in defaults
+    tatOverrides: {}, // board.tatOverrides[siteId]['stage_<id>' | 'task_<key>'] = {min, max} — per-project TAT overrides
   };
 }
 
@@ -745,6 +768,19 @@ function subscribeToBoard(){
     migrateStageStructure();
     render();
   }, (err)=>{ console.error('Firestore snapshot error', err); });
+
+  if(unsubscribeRoles) unsubscribeRoles();
+  const rolesAdminsRef = db.collection('roles').doc('admins');
+  const rolesDevsRef = db.collection('roles').doc('developers');
+  const unsubAdmins = rolesAdminsRef.onSnapshot(snap=>{
+    adminEmailsList = (snap.exists && snap.data().emails) || [];
+    render();
+  }, err=>console.error('roles/admins snapshot error', err));
+  const unsubDevs = rolesDevsRef.onSnapshot(snap=>{
+    developerEmailsList = (snap.exists && snap.data().emails) || [];
+    render();
+  }, err=>console.error('roles/developers snapshot error', err));
+  unsubscribeRoles = ()=>{ unsubAdmins(); unsubDevs(); };
 }
 
 // Backfills any site whose stored data predates the Security Deposit / Agreement /
@@ -753,14 +789,40 @@ function migrateStageStructure(){
   if(!board || !board.sites) return;
   let changed = false;
   if(!board.cities){ board.cities = [{code:'BLR', name:'Bangalore'}, {code:'CHN', name:'Chennai'}]; changed = true; }
-  if(!board.slaOverrides){ board.slaOverrides = {}; changed = true; }
-  if(!board.adminEmails){ board.adminEmails = []; changed = true; }
-  if(!board.developerEmails){ board.developerEmails = []; changed = true; }
+  // TAT is now a range {min, max} instead of one number — migrate any existing
+  // per-project overrides from the old single-value shape, treating that old number as
+  // both ends of the range so nothing's behavior changes until someone widens it.
+  if(!board.tatOverrides){
+    board.tatOverrides = {};
+    if(board.slaOverrides){
+      Object.keys(board.slaOverrides).forEach(siteId=>{
+        board.tatOverrides[siteId] = {};
+        Object.keys(board.slaOverrides[siteId]).forEach(key=>{
+          const v = parseInt(board.slaOverrides[siteId][key]);
+          if(!isNaN(v)) board.tatOverrides[siteId][key] = { min: 0, max: v };
+        });
+      });
+      delete board.slaOverrides;
+    }
+    changed = true;
+  }
+  // adminEmails/developerEmails moved out of the board document entirely — see
+  // roles/admins and roles/developers, and the addAdmin/addDeveloper Cloud Functions.
   // The stage pipeline itself lives in board.nsoStages so it's editable — seed it from
   // today's default the first time, then always point STAGES at whatever's actually
   // stored, so every function in the app automatically uses the live, edited version.
   if(!board.nsoStages || !board.nsoStages.length){ board.nsoStages = STAGES; changed = true; }
   STAGES = board.nsoStages;
+  // Migrate each stage's old single slaDays into the new {tatMinDays, tatMaxDays} range —
+  // old value becomes the max, min defaults to 0, so nothing's overdue status changes.
+  STAGES.forEach(st=>{
+    if(st.slaDays !== undefined && st.tatMaxDays === undefined){
+      st.tatMinDays = 0;
+      st.tatMaxDays = st.slaDays;
+      delete st.slaDays;
+      changed = true;
+    }
+  });
   if(!board.templates){
     board.templates = [{
       id: 'tmpl_nso', name: 'NSO — New Store Opening',
@@ -977,46 +1039,47 @@ function recompute(id){
   });
 }
 
-// Admin-editable SLA overrides live in board.slaOverrides, keyed 'stage_<id>' or 'task_<key>'.
+// Admin-editable TAT overrides live in board.tatOverrides, keyed 'stage_<id>' or 'task_<key>'.
 // Falls back to the built-in default (from STAGES / STAGE11_TASKS) when no override is set.
-// SLA overrides are scoped per individual project, not shared globally — board.slaOverrides
-// is now { siteId: { 'stage_<id>': days, 'task_<key>': days } } instead of one flat table.
-function effectiveSla(siteId, key, defaultDays){
-  if(board && board.slaOverrides && board.slaOverrides[siteId] && board.slaOverrides[siteId][key] !== undefined && board.slaOverrides[siteId][key] !== ''){
-    const v = parseInt(board.slaOverrides[siteId][key]);
-    if(!isNaN(v)) return v;
+// Scoped per individual project, not shared globally — board.tatOverrides is
+// { siteId: { 'stage_<id>': {min,max}, 'task_<key>': {min,max} } }.
+function effectiveTat(siteId, key, defaultMin, defaultMax){
+  if(board && board.tatOverrides && board.tatOverrides[siteId] && board.tatOverrides[siteId][key]){
+    const ov = board.tatOverrides[siteId][key];
+    const min = parseInt(ov.min), max = parseInt(ov.max);
+    if(!isNaN(min) && !isNaN(max)) return { min, max };
   }
-  return defaultDays;
+  return { min: defaultMin||0, max: defaultMax };
 }
 
 function stageTiming(st, d, siteId){
   if(!d.startedAt || d.status==='done' || d.status==='skip') return null;
   const elapsedDays = Math.floor((Date.now() - d.startedAt) / 86400000);
-  const sla = effectiveSla(siteId, 'stage_'+st.id, st.slaDays);
-  const overdueDays = elapsedDays - sla;
-  return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, sla };
+  const tat = effectiveTat(siteId, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays);
+  const overdueDays = elapsedDays - tat.max;
+  return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, tatMin: tat.min, tatMax: tat.max };
 }
 
 // Same idea as stageTiming, but for an individual checklist item within Stage 11 —
 // all items share the stage's own startedAt (Construction Start) as their reference point.
-function itemTiming(startedAt, slaDays, taskKey, siteId){
+function itemTiming(startedAt, tatMinDays, tatMaxDays, taskKey, siteId){
   if(!startedAt) return null;
   const elapsedDays = Math.floor((Date.now() - startedAt) / 86400000);
-  const sla = taskKey ? effectiveSla(siteId, 'task_'+taskKey, slaDays) : slaDays;
-  const overdueDays = elapsedDays - sla;
-  return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, sla };
+  const tat = taskKey ? effectiveTat(siteId, 'task_'+taskKey, tatMinDays, tatMaxDays) : { min: tatMinDays||0, max: tatMaxDays };
+  const overdueDays = elapsedDays - tat.max;
+  return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, tatMin: tat.min, tatMax: tat.max };
 }
 
 // Target opening date for a site — projected from Construction Start (Stage 11's start)
-// plus the Standard Opening Date SLA, or the actual/revised date once logged.
+// plus the Standard Opening Date TAT, or the actual/revised date once logged.
 function computeTargetOpening(s){
   const d11 = s.stageData[11];
   if(!d11) return null;
   if(d11.finalStage && d11.finalStage.actualOpening) return { label:'opened', value: d11.finalStage.actualOpening };
   if(d11.finalStage && d11.finalStage.revisedOpeningDate) return { label:'revised target', value: d11.finalStage.revisedOpeningDate };
   if(d11.startedAt){
-    const standardOpeningSla = STAGE11_TASKS.find(t=>t.key==='standardOpening').slaDays;
-    return { label:'target opening', value: d11.startedAt + standardOpeningSla * 86400000 };
+    const standardOpeningTat = STAGE11_TASKS.find(t=>t.key==='standardOpening').tatMaxDays;
+    return { label:'target opening', value: d11.startedAt + standardOpeningTat * 86400000 };
   }
   return null;
 }
@@ -1478,8 +1541,18 @@ function renderCapexView(){
       const [id, field] = inp.dataset.capexField.split('|');
       const li = c.lineItems.find(x=>x.id===id);
       if(!li) return;
+      if(field === 'actualRate'){
+        // Actual costs go through the secured path — only the site's actual-cost
+        // assignees (or Admin), and only once CapEx is finalized, same as before,
+        // but now genuinely enforced server-side rather than just offered by the UI.
+        try{
+          const res = await setCapexActualFn({ siteId: activeStore, itemId: id, rate: inp.value });
+          if(res && res.data){ li.actualRate = res.data.actualRate; li.actualBy = res.data.actualBy; li.actualAt = res.data.actualAt; }
+          render();
+        }catch(e){ window.alert(e.message || 'Could not save that actual rate — try again.'); render(); }
+        return;
+      }
       li[field] = inp.value;
-      if(field === 'actualRate'){ li.actualBy = getWho(); li.actualAt = Date.now(); }
       await saveBoard(); render();
     };
   });
@@ -1545,33 +1618,29 @@ function renderCapexView(){
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data, {type:'array'});
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
-      let matched = 0, unmatched = [], skippedNoTentative = [];
-      const who = getWho();
-      rows.forEach(row=>{
-        const name = String(row['Item']||'').trim();
-        const rate = String(row['Actual Rate']||'').trim();
-        if(!name || !rate) return;
-        const li = c.lineItems.find(x=>x.name.toLowerCase()===name.toLowerCase());
-        if(!li){ unmatched.push(name); return; }
-        if(!hasTentativeRate(li)){ skippedNoTentative.push(name); return; }
-        li.actualRate = rate; li.actualBy = who; li.actualAt = Date.now(); matched++;
-      });
-      await saveBoard();
-      let msg = `Updated ${matched} item(s).`;
-      if(skippedNoTentative.length) msg += ` Skipped (no tentative rate set): ${skippedNoTentative.join(', ')}.`;
-      if(unmatched.length) msg += ` No line item matched: ${unmatched.join(', ')}.`;
+      const entries = rows.map(row => ({ name: String(row['Item']||'').trim(), rate: String(row['Actual Rate']||'').trim() })).filter(e=>e.name && e.rate);
+      if(!entries.length){ statusEl.textContent = 'No valid rows found (need Item + Actual Rate columns).'; return; }
+      const res = await bulkSetCapexActualsFn({ siteId: activeStore, entries });
+      const { matched, unmatched, skippedNoTentative } = (res && res.data) || {};
+      let msg = `Updated ${matched||0} item(s).`;
+      if(skippedNoTentative && skippedNoTentative.length) msg += ` Skipped (no tentative rate set): ${skippedNoTentative.join(', ')}.`;
+      if(unmatched && unmatched.length) msg += ` No line item matched: ${unmatched.join(', ')}.`;
       statusEl.textContent = msg;
       render();
     }catch(e){
-      statusEl.textContent = 'Import failed: ' + e.message;
+      statusEl.textContent = 'Import failed: ' + (e.message || e);
     }
   };
   const finalizeBtn = document.getElementById('capexFinalizeBtn');
   if(finalizeBtn) finalizeBtn.onclick = async ()=>{
     if(!window.confirm('Finalize the tentative CapEx? Line items lock for editing until actuals are reconciled.')) return;
-    c.finalized = true; c.finalizedBy = getWho(); c.finalizedAt = Date.now();
-    s.log.push({stageId:3, text:`Tentative CapEx finalized by ${getWho()}`, at: Date.now()});
-    await saveBoard(); render();
+    try{
+      const res = await finalizeCapexFn({ siteId: activeStore });
+      if(res && res.data){
+        c.finalized = true; c.finalizedBy = res.data.finalizedBy; c.finalizedAt = res.data.finalizedAt;
+      }
+      render();
+    }catch(e){ window.alert(e.message || 'Could not finalize CapEx — try again.'); }
   };
 }
 
@@ -1665,7 +1734,7 @@ function renderTemplatesView(){
           <div style="flex:1 1 100%;"><div class="admin-row-main">${escapeHtml(t.name)}</div></div>
           <select data-transfer-template="${t.id}" style="width:auto;font-size:11px;">
             <option value="">— transfer to —</option>
-            ${board.developerEmails.filter(e=>e!==me).map(e=>`<option value="${e}">${escapeHtml(e)}</option>`).join('')}
+            ${developerEmailsList.filter(e=>e!==me).map(e=>`<option value="${e}">${escapeHtml(e)}</option>`).join('')}
           </select>
         </div>`;
       });
@@ -1691,7 +1760,9 @@ function renderTemplatesView(){
             <option value="checklist" ${st.type==='checklist'?'selected':''}>Checklist</option>
           </select>
           <input data-stage-edit-owner="${st.id}" value="${escapeHtml(st.owner||'')}" placeholder="Owner" style="flex:1;min-width:140px;font-size:11.5px;">
-          <input data-stage-edit-sla="${st.id}" type="number" value="${st.slaDays||''}" placeholder="SLA days" style="width:80px;font-size:11.5px;">
+          <input data-stage-edit-tatmin="${st.id}" type="number" value="${st.tatMinDays !== undefined ? st.tatMinDays : ''}" placeholder="TAT min" style="width:75px;font-size:11.5px;">
+          <input data-stage-edit-tatmax="${st.id}" type="number" value="${st.tatMaxDays !== undefined ? st.tatMaxDays : ''}" placeholder="TAT max" style="width:75px;font-size:11.5px;">
+          <input data-stage-edit-parallel="${st.id}" value="${escapeHtml(st.parallelGroup||'')}" placeholder="Parallel group (blank = none)" style="width:150px;font-size:11.5px;">
           <textarea data-stage-edit-desc="${st.id}" placeholder="Description" style="flex:1 1 100%;font-size:11.5px;min-height:44px;margin-top:6px;">${escapeHtml(st.desc||'')}</textarea>
           <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex:1 1 100%;">
             <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
@@ -1709,7 +1780,8 @@ function renderTemplatesView(){
           <option value="task">Task</option><option value="approval">Approval</option>
           <option value="gate">Gate</option><option value="checklist">Checklist</option>
         </select></div>
-        <div class="field"><label>SLA (days)</label><input id="newStageSla" type="number" placeholder="e.g. 7"></div>
+        <div class="field"><label>TAT — min days</label><input id="newStageTatMin" type="number" placeholder="e.g. 0"></div>
+        <div class="field"><label>TAT — max days</label><input id="newStageTatMax" type="number" placeholder="e.g. 7"></div>
         <div class="btn-row"><button class="btn primary" id="addStageBtn">Add stage at the end</button></div>
       </details>
     </div>`;
@@ -1720,25 +1792,34 @@ function renderTemplatesView(){
 
   const renumberAndSave = async ()=>{
     STAGES.forEach((st,i)=>{ st.num = String(i+1).padStart(2,'0'); });
-    await saveBoard(); render();
+    try{
+      await saveStagePipelineFn({ stages: STAGES });
+    }catch(e){ window.alert(e.message || 'Could not save pipeline changes — try again.'); }
+    render();
   };
   el.querySelectorAll('[data-stage-edit-title]').forEach(inp=>{
-    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditTitle)); if(st) st.title = inp.value.trim(); saveBoard(); };
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditTitle)); if(st) st.title = inp.value.trim(); renumberAndSave(); };
   });
   el.querySelectorAll('[data-stage-edit-type]').forEach(sel=>{
-    sel.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(sel.dataset.stageEditType)); if(st) st.type = sel.value; saveBoard(); };
+    sel.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(sel.dataset.stageEditType)); if(st) st.type = sel.value; renumberAndSave(); };
   });
   el.querySelectorAll('[data-stage-edit-owner]').forEach(inp=>{
-    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditOwner)); if(st) st.owner = inp.value.trim(); saveBoard(); };
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditOwner)); if(st) st.owner = inp.value.trim(); renumberAndSave(); };
   });
-  el.querySelectorAll('[data-stage-edit-sla]').forEach(inp=>{
-    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditSla)); if(st) st.slaDays = parseInt(inp.value)||1; saveBoard(); };
+  el.querySelectorAll('[data-stage-edit-tatmin]').forEach(inp=>{
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditTatmin)); if(st) st.tatMinDays = parseInt(inp.value)||0; renumberAndSave(); };
+  });
+  el.querySelectorAll('[data-stage-edit-tatmax]').forEach(inp=>{
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditTatmax)); if(st) st.tatMaxDays = parseInt(inp.value)||1; renumberAndSave(); };
+  });
+  el.querySelectorAll('[data-stage-edit-parallel]').forEach(inp=>{
+    inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditParallel)); if(st) st.parallelGroup = inp.value.trim() || null; renumberAndSave(); };
   });
   el.querySelectorAll('[data-stage-edit-desc]').forEach(ta=>{
-    ta.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(ta.dataset.stageEditDesc)); if(st) st.desc = ta.value.trim(); saveBoard(); };
+    ta.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(ta.dataset.stageEditDesc)); if(st) st.desc = ta.value.trim(); renumberAndSave(); };
   });
   el.querySelectorAll('[data-stage-edit-blroly]').forEach(chk=>{
-    chk.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(chk.dataset.stageEditBlroly)); if(st) st.bangaloreOnly = chk.checked; saveBoard(); };
+    chk.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(chk.dataset.stageEditBlroly)); if(st) st.bangaloreOnly = chk.checked; renumberAndSave(); };
   });
   el.querySelectorAll('[data-stage-move-up]').forEach(btn=>{
     btn.onclick = async ()=>{
@@ -1770,9 +1851,10 @@ function renderTemplatesView(){
     const title = document.getElementById('newStageTitle').value.trim();
     if(!title) return;
     const type = document.getElementById('newStageType').value;
-    const slaDays = parseInt(document.getElementById('newStageSla').value) || 7;
+    const tatMinDays = parseInt(document.getElementById('newStageTatMin').value) || 0;
+    const tatMaxDays = parseInt(document.getElementById('newStageTatMax').value) || 7;
     const newId = STAGES.length ? Math.max(...STAGES.map(x=>x.id)) + 1 : 1;
-    STAGES.push({ id: newId, num: '00', title, type, owner: '', duration: `${slaDays}d`, slaDays, desc: '' });
+    STAGES.push({ id: newId, num: '00', title, type, owner: '', duration: `${tatMinDays}-${tatMaxDays}d`, tatMinDays, tatMaxDays, desc: '' });
     document.getElementById('newStageTitle').value = '';
     await renumberAndSave();
   };
@@ -1798,8 +1880,8 @@ function renderTemplatesView(){
       const site = getSite(btn.dataset.publishDraft);
       if(!site) return;
       site.status = 'live';
-      // The SLA clock only starts once a project is actually active — a draft sitting
-      // around doesn't burn its first stage's SLA before anyone's even seen it.
+      // The TAT clock only starts once a project is actually active — a draft sitting
+      // around doesn't burn its first stage's TAT before anyone's even seen it.
       const s = storeState(site.id);
       if(s){
         const firstStage = STAGES[0];
@@ -1950,18 +2032,22 @@ function renderSummary(){
       <button class="btn primary" id="closeProjectBtn" style="width:100%;">Close Project</button>
     </div>`);
     document.getElementById('closeProjectBtn').onclick = async ()=>{
+      let overrideReason = '';
       if(capexOk){
         if(!window.confirm(`Close ${site.name}? All snags are signed off and every stage is complete. This marks the project as formally closed.`)) return;
       } else {
         const reason = window.prompt(`Not all CapEx actual costs are recorded for ${site.name}. Enter a reason to close anyway — this will be logged:`);
         if(!reason) return;
-        s.closureOverride = { by: getWho(), at: Date.now(), reason };
+        overrideReason = reason;
       }
-      s.projectClosed = true;
-      s.closedBy = getWho();
-      s.closedAt = Date.now();
-      await saveBoard();
-      render();
+      try{
+        const res = await closeProjectFn({ siteId: site.id, overrideReason });
+        if(res && res.data){
+          s.projectClosed = true; s.closedBy = res.data.closedBy; s.closedAt = res.data.closedAt;
+          if(res.data.closureOverride) s.closureOverride = res.data.closureOverride;
+        }
+        render();
+      }catch(e){ window.alert(e.message || 'Could not close the project — try again.'); }
     };
   }
 
@@ -2033,7 +2119,7 @@ function renderFlow(){
       const reasonBit = d.delayReason
         ? `Reason logged: "${escapeAndLinkify(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}`
         : `No reason logged yet — tap the stage to log one.`;
-      return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${t.sla}d SLA. ${reasonBit}</div>`;
+      return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${t.tatMin}-${t.tatMax}d TAT. ${reasonBit}</div>`;
     }).join('') + `</div>`;
   }
 
@@ -2051,8 +2137,9 @@ function renderFlow(){
     if(t && t.isOverdue) dotCls = 'overdue';
     let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : (t && t.isOverdue ? '!' : st.num));
     let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back'}[d.status];
-    let slaBit = `SLA ${effectiveSla(activeStore, 'stage_'+st.id, st.slaDays)}d`;
-    if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over SLA` : `Day ${t.elapsedDays} of ${t.sla}d SLA`;
+    const defaultTat = effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays);
+    let slaBit = `TAT ${defaultTat.min}-${defaultTat.max}d`;
+    if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over TAT` : `Day ${t.elapsedDays} of ${t.tatMin}-${t.tatMax}d TAT`;
     let ownerText = st.owner;
     if(st.id === 2) ownerText = st.owner + ` · target ${FORMATS[site.format].sizeText}`;
     const assignedNames = (d.assignedTo||[]).map(id=>{
@@ -2101,22 +2188,56 @@ function renderFlow(){
     }
   } else {
     html += '<div class="rail-line"></div>';
-    stageMeta.forEach(m=>{
+    // Consecutive stages sharing the same parallelGroup render side-by-side in one row
+    // instead of one after another, since they represent work genuinely happening at
+    // the same time — not a strict sequence. A group only actually renders as parallel
+    // if 2+ of its members are non-skipped for this site (e.g. Chennai skips the
+    // Bangalore-only Electrical Load stage, so its "parallel partner" just renders alone).
+    let i = 0;
+    while(i < stageMeta.length){
+      const m = stageMeta[i];
+      if(!m.skip && m.st.parallelGroup){
+        const group = [m];
+        let j = i+1;
+        while(j < stageMeta.length && !stageMeta[j].skip && stageMeta[j].st.parallelGroup === m.st.parallelGroup){
+          group.push(stageMeta[j]); j++;
+        }
+        if(group.length > 1){
+          html += `<div class="stage-row">
+            <div class="stage-dot" style="background:var(--gold);color:#fff;">∥</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:10.5px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Running in parallel</div>
+              <div style="display:flex;gap:8px;">
+                ${group.map(gm => `<div class="stage-card ${gm.d.status} ${gm.t&&gm.t.isOverdue?'overdue-card':''}" data-stage="${gm.st.id}" style="flex:1;min-width:0;padding:10px;cursor:pointer;">
+                  <span class="stage-badge ${gm.st.type}" style="font-size:9px;">${gm.st.type}</span>
+                  <div class="stage-title" style="font-size:12px;margin-top:4px;">${gm.st.num} · ${escapeHtml(gm.st.title)}</div>
+                  <div class="stage-dur ${gm.t&&gm.t.isOverdue?'overdue-dur':''}" style="font-size:9.5px;margin-top:4px;">${gm.slaBit}</div>
+                  <div class="stage-status ${gm.t&&gm.t.isOverdue?'overdue':gm.d.status}" style="font-size:9.5px;">${gm.statusLabel}</div>
+                </div>`).join('')}
+              </div>
+            </div>
+          </div>`;
+          i = j;
+          continue;
+        }
+      }
       if(m.skip){
         html += `<div class="stage-row"><div class="stage-dot">–</div>
           <div class="stage-card skip"><div class="stage-title">${m.st.num} · ${escapeHtml(m.st.title)}</div>
           <div class="stage-owner">Not applicable — Chennai</div></div></div>`;
-        return;
+        i++;
+        continue;
       }
       html += stageCardHtml(m);
       if(m.d.status === 'declined' && m.st.reworkTo){
         html += `<div class="restart-note">↩ restarted to Stage ${STAGES.find(x=>x.id===m.st.reworkTo).num} — ${escapeHtml(STAGES.find(x=>x.id===m.st.reworkTo).title)}</div>`;
       }
-    });
+      i++;
+    }
   }
 
   el.innerHTML = html;
-  el.querySelectorAll('.stage-row[data-stage]').forEach(row=>{
+  el.querySelectorAll('.stage-row[data-stage], .stage-card[data-stage]').forEach(row=>{
     row.onclick = ()=> openSheet(parseInt(row.dataset.stage));
   });
   el.querySelectorAll('[data-stage-h]').forEach(row=>{
@@ -2172,10 +2293,10 @@ function openSheet(stageId){
 
   const t = stageTiming(st, d, activeStore);
   if(t){
-    inner += `<div class="meta" style="margin-top:8px;">Day ${t.elapsedDays} of ${t.sla}d SLA${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
+    inner += `<div class="meta" style="margin-top:8px;">Day ${t.elapsedDays} of ${t.tatMin}-${t.tatMax}d TAT${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
   }
   if(t && t.isOverdue){
-    inner += `<div class="warn">⚠ This stage is ${t.overdueDays} day(s) past its SLA.
+    inner += `<div class="warn">⚠ This stage is ${t.overdueDays} day(s) past its TAT.
       ${d.delayReason ? `Reason logged: "${escapeAndLinkify(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}, ${timeAgo(d.delayLoggedAt)}` : ''}
     </div>`;
     inner += `<div class="field"><label>${d.delayReason?'Update delay reason':'Log reason for delay'}</label>
@@ -2232,10 +2353,11 @@ function openSheet(stageId){
     }
     inner += `<div class="approver-list">` + panel.map(p=>{
       const rec = d.approvals[p.id];
+      const canToggle = p.id === myId; // only the actual seat-holder — no Admin override, by design
       return `<div class="approver">
         <div class="approver-name">${escapeHtml(p.name)} <span class="level-badge">${levelLabel(p.level)}</span>
           ${rec ? `<div class="approver-stamp">✓ confirmed by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}</div>
-        <div class="check ${rec?'on':''}" data-approver="${p.id}">${rec?'✓':''}</div>
+        <div class="check ${rec?'on':''}" ${canToggle ? `data-approver="${p.id}"` : ''} style="${canToggle?'':'cursor:default;opacity:0.7;'}" title="${canToggle?'':'Only '+escapeHtml(p.name)+' can sign off this seat'}">${rec?'✓':''}</div>
       </div>`;
     }).join('') + `</div>
     <div class="progress-line">${approvedCount} / ${panel.length} signed off${d.status==='done' ? ' — all approved' : ''}</div>`;
@@ -2321,9 +2443,9 @@ function openSheet(stageId){
     const overPlanCount = STAGE11_TASKS.filter(item=>{
       const rec = d.tasks[item.key];
       if(!rec || !rec.tentativeStart || !rec.tentativeEnd) return false;
-      const sla = effectiveSla(activeStore, 'task_'+item.key, item.slaDays);
+      const tat = effectiveTat(activeStore, 'task_'+item.key, item.tatMinDays, item.tatMaxDays);
       const plannedDays = Math.round((new Date(rec.tentativeEnd) - new Date(rec.tentativeStart)) / 86400000);
-      return plannedDays > sla;
+      return plannedDays > tat.max;
     }).length;
 
     inner += `<div class="progress-line" style="font-weight:700;color:var(--ink);">${doneCount} / ${STAGE11_TASKS.length} execution tasks complete</div>`;
@@ -2331,26 +2453,26 @@ function openSheet(stageId){
       inner += `<div class="warn">⚠ ${missingDateCount} completed task${missingDateCount>1?'s':''} missing an actual completion date — project team should record the real date, not just tick the box.</div>`;
     }
     if(overPlanCount > 0){
-      inner += `<div class="warn">⚠ ${overPlanCount} task${overPlanCount>1?'s have':' has'} a planned duration (tentative start to end) longer than its admin-set SLA.</div>`;
+      inner += `<div class="warn">⚠ ${overPlanCount} task${overPlanCount>1?'s have':' has'} a planned duration (tentative start to end) longer than its admin-set TAT.</div>`;
     }
 
     inner += `<details class="collapse-group" open>
       <summary>Execution Tasks (${STAGE11_TASKS.length})</summary>`;
     STAGE11_TASKS.forEach(item=>{
       const rec = d.tasks[item.key] || { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
-      const sla = effectiveSla(activeStore, 'task_'+item.key, item.slaDays);
-      const it = itemTiming(d.startedAt, item.slaDays, item.key, activeStore);
-      const slaLabel = it ? (it.isOverdue ? `${it.overdueDays}d over ${sla}d SLA` : `Day ${it.elapsedDays} of ${sla}d SLA`) : `${sla}d SLA`;
+      const tat = effectiveTat(activeStore, 'task_'+item.key, item.tatMinDays, item.tatMaxDays);
+      const it = itemTiming(d.startedAt, item.tatMinDays, item.tatMaxDays, item.key, activeStore);
+      const slaLabel = it ? (it.isOverdue ? `${it.overdueDays}d over ${tat.min}-${tat.max}d TAT` : `Day ${it.elapsedDays} of ${tat.min}-${tat.max}d TAT`) : `${tat.min}-${tat.max}d TAT`;
       const missingDate = rec.done && !rec.actualDate;
       let plannedDays = null;
       if(rec.tentativeStart && rec.tentativeEnd){
         plannedDays = Math.round((new Date(rec.tentativeEnd) - new Date(rec.tentativeStart)) / 86400000);
       }
-      const overPlan = plannedDays !== null && plannedDays > sla;
+      const overPlan = plannedDays !== null && plannedDays > tat.max;
       inner += `<div class="mini-task-card ${rec.done?'done':''} ${(it&&it.isOverdue&&!rec.done)||overPlan?'overdue-card':''}">
         <div class="mini-task-top">
           <div class="mini-task-label">${escapeHtml(item.label)}</div>
-          <div class="mini-task-sla ${it&&it.isOverdue?'overdue-dur':''}">${slaLabel}</div>
+          <div class="mini-task-tat ${it&&it.isOverdue?'overdue-dur':''}">${slaLabel}</div>
         </div>
         <div class="field" style="margin-top:8px;"><label>Assigned to</label>
           ${(()=>{
@@ -2382,7 +2504,7 @@ function openSheet(stageId){
             ${dateFieldWithClear(`task_tend_${item.key}`, rec.tentativeEnd)}
           </div>
         </div>
-        ${overPlan ? `<div class="mini-task-flag">⚠ Planned ${plannedDays}d — exceeds ${sla}d SLA by ${plannedDays-sla}d</div>` : ''}
+        ${overPlan ? `<div class="mini-task-flag">⚠ Planned ${plannedDays}d — exceeds ${tat.max}d TAT by ${plannedDays-tat.max}d</div>` : ''}
         <div class="mini-task-row">
           <label class="mini-task-check"><input type="checkbox" data-task-done="${item.key}" ${rec.done?'checked':''}> Complete</label>
           <div style="flex:1;">${dateFieldWithClear(`task_actual_${item.key}`, rec.actualDate)}</div>
@@ -2395,7 +2517,7 @@ function openSheet(stageId){
 
     inner += `<details class="collapse-group">
       <summary>Design Details (${STAGE11_DESIGN.length})</summary>
-      <div class="progress-line" style="margin-top:0;">One-time specs — no SLA</div>`;
+      <div class="progress-line" style="margin-top:0;">One-time specs — no TAT</div>`;
     STAGE11_DESIGN.forEach(f=>{
       if(f.dateTriplet){
         inner += renderDateTriplet('dsn', f.key, f.label, d.design[f.key]);
@@ -2407,7 +2529,7 @@ function openSheet(stageId){
 
     inner += `<details class="collapse-group">
       <summary>Equipment Delivery Schedule (${STAGE11_DELIVERY.length})</summary>
-      <div class="progress-line" style="margin-top:0;">No SLA — tracked as tentative start / delivery date / actual date</div>`;
+      <div class="progress-line" style="margin-top:0;">No TAT — tracked as tentative start / delivery date / actual date</div>`;
     STAGE11_DELIVERY.forEach(f=>{
       inner += renderDateTriplet('dlv', f.key, f.label, d.delivery[f.key]);
     });
@@ -2732,18 +2854,26 @@ function wireSheetActions(st, s, d){
 
   document.querySelectorAll('[data-approver]').forEach(chip=>{
     chip.onclick = async ()=>{
-      const who = getWho();
       const pid = chip.dataset.approver;
-      d.approvals = d.approvals || {};
-      if(d.approvals[pid]) delete d.approvals[pid];
-      else d.approvals[pid] = { by: who, at: Date.now() };
-      const panel = board.approvalPanel;
-      const allApproved = panel.length===5 && panel.every(pid2=>d.approvals[pid2]);
-      if(allApproved){
-        d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
-        s.log.push({stageId:st.id, text:`All 5 signed off, confirmed by ${who}`, at: Date.now()});
+      const myId = (findMyStakeholder()||{}).id;
+      // Defense in depth — only that seat's own person can toggle it, no Admin
+      // override. The chip shouldn't even be clickable otherwise, but this guards
+      // against any stale DOM state or direct manipulation. The REAL enforcement now
+      // lives server-side in toggleApproval — this local check is just a fast, friendly
+      // no-op for a UI element that shouldn't be clickable at all in that case.
+      if(pid !== myId) return;
+      try{
+        const res = await toggleApprovalFn({ siteId: activeStore, stageId: st.id });
+        // Apply the server's result to the local view immediately — otherwise the UI
+        // would sit stale until the Firestore listener's round-trip catches up.
+        if(res && res.data){
+          d.approvals = res.data.approvals;
+          d.status = res.data.status;
+        }
+        render(); openSheet(st.id);
+      }catch(e){
+        window.alert(e.message || 'Could not update your approval — try again.');
       }
-      await saveBoard(); render(); openSheet(st.id);
     };
   });
 
@@ -2818,15 +2948,15 @@ function renderAdmin(){
   el.innerHTML = `
     <div class="admin-section" id="adminRolesSection">
       <h3>Roles</h3>
-      <div class="sub">Admin gets full control — sites, stakeholders, SLA, CapEx, closures. Developer is reserved for future structural editing (stage design) — no capability is gated on it yet.</div>
+      <div class="sub">Admin gets full control — sites, stakeholders, TAT, CapEx, closures. Developer can additionally edit the shared stage pipeline (Templates → Stage Editor). Both roles are enforced server-side now — granting or revoking either always goes through a Cloud Function that re-checks your own role first, not a direct database write.</div>
       <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Admin</div>
       ${ROOT_ADMIN_EMAILS.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><span class="admin-row-sub">built-in, can't remove</span></div>`).join('')}
-      ${board.adminEmails.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><button class="remove-x" data-del-admin-email="${escapeHtml(e)}">✕</button></div>`).join('')}
+      ${adminEmailsList.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><button class="remove-x" data-del-admin-email="${escapeHtml(e)}">✕</button></div>`).join('')}
       <div class="field"><input id="admNewAdminEmail" type="email" placeholder="add an admin's email"></div>
       <div class="btn-row"><button class="btn ghost" id="admAddAdminEmail">Add admin</button></div>
 
       <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px;">Developer</div>
-      ${board.developerEmails.length === 0 ? `<div class="admin-row-sub" style="padding:6px 0;">No one yet.</div>` : board.developerEmails.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><button class="remove-x" data-del-dev-email="${escapeHtml(e)}">✕</button></div>`).join('')}
+      ${developerEmailsList.length === 0 ? `<div class="admin-row-sub" style="padding:6px 0;">No one yet.</div>` : developerEmailsList.map(e=>`<div class="admin-row"><div class="admin-row-main">${escapeHtml(e)}</div><button class="remove-x" data-del-dev-email="${escapeHtml(e)}">✕</button></div>`).join('')}
       <div class="field"><input id="admNewDevEmail" type="email" placeholder="add a developer's email"></div>
       <div class="btn-row"><button class="btn ghost" id="admAddDevEmail">Add developer</button></div>
     </div>
@@ -2958,8 +3088,8 @@ function renderAdmin(){
 
     <div class="admin-section" id="adminSlaSection">
       <details class="collapse-group" ${slaSectionOpen ? 'open' : ''}>
-        <summary>SLA Settings <span style="font-weight:400;color:var(--sub);font-size:11px;">Admin only</span></summary>
-        <div class="sub" style="margin-top:0;">Each project can have its own SLA — pick one below, then override any stage or task just for it. Leave blank to use the built-in default.</div>
+        <summary>TAT Settings <span style="font-weight:400;color:var(--sub);font-size:11px;">Admin only</span></summary>
+        <div class="sub" style="margin-top:0;">Each project can have its own TAT (turnaround time) — pick one below, then override any stage or task's min/max range just for it. Leave blank to use the built-in default.</div>
         <div class="field"><label>Project</label>
           <select id="slaProjectPicker">
             <option value="">— select a project —</option>
@@ -2968,19 +3098,27 @@ function renderAdmin(){
         </div>
         ${slaEditorSiteId ? `
           <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Stages</div>
-          ${STAGES.map(st=>`
+          ${STAGES.map(st=>{
+            const ov = (board.tatOverrides[slaEditorSiteId] && board.tatOverrides[slaEditorSiteId]['stage_'+st.id]) || {};
+            return `
             <div class="admin-row">
-              <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)} <span class="admin-row-sub">(default ${st.slaDays}d)</span></div>
-              <input type="number" data-sla-override="stage_${st.id}" value="${(board.slaOverrides[slaEditorSiteId] && board.slaOverrides[slaEditorSiteId]['stage_'+st.id] !== undefined) ? board.slaOverrides[slaEditorSiteId]['stage_'+st.id] : ''}" placeholder="${st.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
-            </div>`).join('')}
+              <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)} <span class="admin-row-sub">(default ${st.tatMinDays}-${st.tatMaxDays}d)</span></div>
+              <input type="number" data-tat-override-min="stage_${st.id}" value="${ov.min !== undefined ? ov.min : ''}" placeholder="min" style="width:60px;font-size:12px;padding:6px 8px;">
+              <input type="number" data-tat-override-max="stage_${st.id}" value="${ov.max !== undefined ? ov.max : ''}" placeholder="max" style="width:60px;font-size:12px;padding:6px 8px;">
+            </div>`;
+          }).join('')}
           <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Post-LOI Execution tasks</div>
-          ${STAGE11_TASKS.map(item=>`
+          ${STAGE11_TASKS.map(item=>{
+            const ov = (board.tatOverrides[slaEditorSiteId] && board.tatOverrides[slaEditorSiteId]['task_'+item.key]) || {};
+            return `
             <div class="admin-row">
-              <div class="admin-row-main" style="flex:1;">${escapeHtml(item.label)} <span class="admin-row-sub">(default ${item.slaDays}d)</span></div>
-              <input type="number" data-sla-override="task_${item.key}" value="${(board.slaOverrides[slaEditorSiteId] && board.slaOverrides[slaEditorSiteId]['task_'+item.key] !== undefined) ? board.slaOverrides[slaEditorSiteId]['task_'+item.key] : ''}" placeholder="${item.slaDays}" style="width:70px;font-size:12px;padding:6px 8px;">
-            </div>`).join('')}
-          <div class="btn-row"><button class="btn primary" id="admSaveSla">Save SLA changes for this project</button></div>
-        ` : `<div class="empty-note">Pick a project above to see and edit its SLA overrides.</div>`}
+              <div class="admin-row-main" style="flex:1;">${escapeHtml(item.label)} <span class="admin-row-sub">(default ${item.tatMinDays}-${item.tatMaxDays}d)</span></div>
+              <input type="number" data-tat-override-min="task_${item.key}" value="${ov.min !== undefined ? ov.min : ''}" placeholder="min" style="width:60px;font-size:12px;padding:6px 8px;">
+              <input type="number" data-tat-override-max="task_${item.key}" value="${ov.max !== undefined ? ov.max : ''}" placeholder="max" style="width:60px;font-size:12px;padding:6px 8px;">
+            </div>`;
+          }).join('')}
+          <div class="btn-row"><button class="btn primary" id="admSaveSla">Save TAT changes for this project</button></div>
+        ` : `<div class="empty-note">Pick a project above to see and edit its TAT overrides.</div>`}
       </details>
     </div>
 
@@ -3018,9 +3156,12 @@ function renderAdmin(){
   document.getElementById('admAddAdminEmail').onclick = async ()=>{
     const email = document.getElementById('admNewAdminEmail').value.trim().toLowerCase();
     if(!isValidEmail(email)) return;
-    if(ROOT_ADMIN_EMAILS.includes(email) || board.adminEmails.includes(email)) return;
-    board.adminEmails.push(email);
-    await saveBoard(); render();
+    if(ROOT_ADMIN_EMAILS.includes(email) || adminEmailsList.includes(email)) return;
+    try{
+      await addAdminFn({ email });
+      document.getElementById('admNewAdminEmail').value = '';
+      render();
+    }catch(e){ window.alert(e.message || 'Could not add that admin.'); }
   };
   el.querySelectorAll('[data-restore-project]').forEach(btn=>{
     btn.onclick = async ()=>{
@@ -3045,21 +3186,24 @@ function renderAdmin(){
   });
   el.querySelectorAll('[data-del-admin-email]').forEach(btn=>{
     btn.onclick = async ()=>{
-      board.adminEmails = board.adminEmails.filter(e=>e!==btn.dataset.delAdminEmail);
-      await saveBoard(); render();
+      try{ await removeAdminFn({ email: btn.dataset.delAdminEmail }); render(); }
+      catch(e){ window.alert(e.message || 'Could not remove that admin.'); }
     };
   });
   document.getElementById('admAddDevEmail').onclick = async ()=>{
     const email = document.getElementById('admNewDevEmail').value.trim().toLowerCase();
     if(!isValidEmail(email)) return;
-    if(board.developerEmails.includes(email)) return;
-    board.developerEmails.push(email);
-    await saveBoard(); render();
+    if(developerEmailsList.includes(email)) return;
+    try{
+      await addDeveloperFn({ email });
+      document.getElementById('admNewDevEmail').value = '';
+      render();
+    }catch(e){ window.alert(e.message || 'Could not add that developer.'); }
   };
   el.querySelectorAll('[data-del-dev-email]').forEach(btn=>{
     btn.onclick = async ()=>{
-      board.developerEmails = board.developerEmails.filter(e=>e!==btn.dataset.delDevEmail);
-      await saveBoard(); render();
+      try{ await removeDeveloperFn({ email: btn.dataset.delDevEmail }); render(); }
+      catch(e){ window.alert(e.message || 'Could not remove that developer.'); }
     };
   });
 
@@ -3089,12 +3233,18 @@ function renderAdmin(){
   const admSaveSlaBtn = document.getElementById('admSaveSla');
   if(admSaveSlaBtn) admSaveSlaBtn.onclick = async ()=>{
     if(!slaEditorSiteId) return;
-    if(!board.slaOverrides[slaEditorSiteId]) board.slaOverrides[slaEditorSiteId] = {};
-    el.querySelectorAll('[data-sla-override]').forEach(inp=>{
-      const key = inp.dataset.slaOverride;
-      const val = inp.value.trim();
-      if(val === '') delete board.slaOverrides[slaEditorSiteId][key];
-      else board.slaOverrides[slaEditorSiteId][key] = parseInt(val);
+    if(!board.tatOverrides[slaEditorSiteId]) board.tatOverrides[slaEditorSiteId] = {};
+    const keys = new Set();
+    el.querySelectorAll('[data-tat-override-min]').forEach(inp=>keys.add(inp.dataset.tatOverrideMin));
+    keys.forEach(key=>{
+      const minInp = el.querySelector(`[data-tat-override-min="${key}"]`);
+      const maxInp = el.querySelector(`[data-tat-override-max="${key}"]`);
+      const minVal = minInp.value.trim(), maxVal = maxInp.value.trim();
+      if(minVal === '' || maxVal === ''){
+        delete board.tatOverrides[slaEditorSiteId][key];
+      } else {
+        board.tatOverrides[slaEditorSiteId][key] = { min: parseInt(minVal), max: parseInt(maxVal) };
+      }
     });
     await saveBoard(); render();
   };
@@ -3264,17 +3414,26 @@ function renderAdmin(){
   el.querySelectorAll('[data-approver-edit]').forEach(chk=>{
     chk.onchange = async ()=>{
       const p = board.stakeholders.find(x=>x.id===chk.dataset.approverEdit);
-      if(p) p.isApprover = chk.checked;
-      if(!chk.checked) board.approvalPanel = board.approvalPanel.map(pid=>pid===p.id?'':pid);
-      await saveBoard(); render();
+      if(!p) return;
+      try{
+        const res = await setApproverEligibilityFn({ personId: p.id, isApprover: chk.checked });
+        if(res && res.data){
+          p.isApprover = res.data.isApprover;
+          if(!res.data.isApprover) board.approvalPanel = board.approvalPanel.map(pid=>pid===p.id?'':pid);
+        }
+        render();
+      }catch(e){ window.alert(e.message || 'Could not update Approver status — try again.'); render(); }
     };
   });
 
   el.querySelectorAll('[data-slot]').forEach(sel=>{
     sel.onchange = async ()=>{
       const i = parseInt(sel.dataset.slot);
-      board.approvalPanel[i] = sel.value;
-      await saveBoard(); render();
+      try{
+        const res = await setApprovalPanelSeatFn({ slot: i, personId: sel.value });
+        if(res && res.data) board.approvalPanel[i] = res.data.personId;
+        render();
+      }catch(e){ window.alert(e.message || 'Could not update that seat — try again.'); render(); }
     };
   });
 }
@@ -3472,6 +3631,7 @@ document.getElementById('saveNameBtn').onclick = async ()=>{
 document.getElementById('switchUserBtn').onclick = async ()=>{
   await auth.signOut();
   if(unsubscribeBoard){ unsubscribeBoard(); unsubscribeBoard = null; }
+  if(unsubscribeRoles){ unsubscribeRoles(); unsubscribeRoles = null; }
   currentUser = null;
   pendingNewUserEmail = null;
   signupEmail = null;
