@@ -20,6 +20,7 @@
     --task-bg:#F3E9DC; --task-ink:#4B1010;
     --appr-bg:#F5E6C8; --appr-ink:#8A5A12;
     --gate-bg:#F3DCD8; --gate-ink:#8A2E2E;
+    --comm-bg:#DCE9E3; --comm-ink:#1F6B4D;
     --done:#2F7A4F; --done-bg:#E3F2E7;
     --pending:#B8A99C; --pending-bg:#F2EDE6;
     --active:#4B1010;
@@ -539,6 +540,8 @@ let STAGES = [
   {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', tatMinDays:0, tatMaxDays:14,
    desc:'Physical scouting within identified markets.',
    warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
+  {id:12, num:'02a', title:'Commercial Terms', type:'commercial-terms', owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
+   desc:'Commercial/lease terms negotiated and captured — rent, tenure, security deposit, lock-in, and related terms. Filled in by Business Development.'},
   {id:3, num:'03', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5,
    desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
   {id:4, num:'04', title:'Site Visit + Sign-Off', type:'approval', owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10,
@@ -733,7 +736,46 @@ function defaultBoard(){
     adminEmails: [], developerEmails: [],
     templates: seedTemplates,
     tatOverrides: {}, // board.tatOverrides[siteId]['stage_<id>' | 'task_<key>'] = {min, max} — per-project TAT overrides
+    commercialTermsFields: defaultCommercialTermsFields(),
   };
+}
+
+// The editable field list for the Commercial Terms stage — addable/editable later via
+// Admin → Commercial Terms Fields, without needing a code change. Field VALUES are
+// stored per-project keyed by each field's id, so adding a new field here never disturbs
+// data already entered against the existing ones.
+function defaultCommercialTermsFields(){
+  return [
+    {id:'agreementType', label:'Type of Agreement', type:'text'},
+    {id:'lessorName', label:'Lessor Name', type:'text'},
+    {id:'rentProportion', label:'Proportion in which Rent/SD to be paid', type:'text'},
+    {id:'propertyAddress', label:'Property Address', type:'textarea'},
+    {id:'leaseTerms', label:'Lease Terms', type:'text'},
+    {id:'rentByYear', label:'Commercial Terms / Rent (by year block)', type:'textarea'},
+    {id:'leaseTenure', label:'Lease Tenure', type:'text'},
+    {id:'superArea', label:'Super Area', type:'text'},
+    {id:'builtUpArea', label:'Built up Area', type:'text'},
+    {id:'carpetArea', label:'Carpet Area', type:'text'},
+    {id:'rentEscalation', label:'Rent Escalation', type:'text'},
+    {id:'securityDeposit', label:'Security Deposit', type:'text'},
+    {id:'sdTerms', label:'Term of Security Deposit', type:'textarea'},
+    {id:'sdEscalation', label:'Security Deposit Escalation', type:'text'},
+    {id:'camCharges', label:'Common Area Maintenance Charges', type:'text'},
+    {id:'electricityLoadCharge', label:'Electricity Load Enhancement Charge', type:'text'},
+    {id:'powerBackup', label:'Power Backup', type:'text'},
+    {id:'waterSupply', label:'Water Supply', type:'text'},
+    {id:'lockInLessor', label:'Lock in Period — Lessor', type:'text'},
+    {id:'lockInLessee', label:'Lock in Period — Lessee', type:'text'},
+    {id:'rentFreePeriod', label:'Rent Free Period', type:'text'},
+    {id:'fitOutSD', label:'Adjustable Fit-Out Security Deposit', type:'text'},
+    {id:'regStampDuty', label:'Registration & Stamp Duty Cost', type:'text'},
+    {id:'terminationNotice', label:'Termination Notice Period', type:'text'},
+    {id:'brokerage', label:'Brokerage', type:'text'},
+    {id:'landlordScope', label:'Landlord Scope of Investment', type:'text'},
+    {id:'otherTerms', label:'Other Terms, if Discussed', type:'textarea'},
+    {id:'dgRequirement', label:'DG Requirement', type:'text'},
+    {id:'outdoorAC', label:'Outdoor AC Placement', type:'text'},
+  ];
 }
 
 function makeSiteData(site){
@@ -750,6 +792,9 @@ function makeSiteData(site){
       stageData[st.id].design = {};      // { key: value }
       stageData[st.id].delivery = {};    // { key: value }
       stageData[st.id].finalStage = {};  // { key: value }
+    }
+    if(st.type === 'commercial-terms'){
+      stageData[st.id].commercialTerms = {}; // { fieldId: value } — keyed against board.commercialTermsFields, not this stage's id, so the field list can grow later without touching existing data
     }
   });
   return { current: STAGES[0].id, stageData, log: [], signingDate: null, comments: [], emailThread: null, projectClosed: false, closedBy: null, closedAt: null,
@@ -815,6 +860,18 @@ function migrateStageStructure(){
   // stored, so every function in the app automatically uses the live, edited version.
   if(!board.nsoStages || !board.nsoStages.length){ board.nsoStages = STAGES; changed = true; }
   STAGES = board.nsoStages;
+  // Commercial Terms stage added after Ground Scouting — backfill it into any board whose
+  // nsoStages was already seeded before this stage existed, so existing live pipelines
+  // pick it up without needing to recreate the board from scratch.
+  if(!STAGES.find(st=>st.type==='commercial-terms')){
+    const groundScoutingIdx = STAGES.findIndex(st=>st.id===2);
+    const newStage = {id:12, num:'02a', title:'Commercial Terms', type:'commercial-terms', owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
+      desc:'Commercial/lease terms negotiated and captured — rent, tenure, security deposit, lock-in, and related terms. Filled in by Business Development.'};
+    if(groundScoutingIdx === -1) STAGES.push(newStage);
+    else STAGES.splice(groundScoutingIdx+1, 0, newStage);
+    changed = true;
+  }
+  if(!board.commercialTermsFields){ board.commercialTermsFields = defaultCommercialTermsFields(); changed = true; }
   // Migrate each stage's old single slaDays into the new {tatMinDays, tatMaxDays} range —
   // old value becomes the max, min defaults to 0, so nothing's overdue status changes.
   STAGES.forEach(st=>{
@@ -873,6 +930,10 @@ function migrateStageStructure(){
         Object.values(s.stageData[11].tasks).forEach(rec=>{
           if(!Array.isArray(rec.assignedTo)){ rec.assignedTo = rec.assignedTo ? [rec.assignedTo] : []; changed = true; }
         });
+      }
+      if(st.type === 'commercial-terms' && !s.stageData[st.id].commercialTerms){
+        s.stageData[st.id].commercialTerms = {};
+        changed = true;
       }
     });
   });
@@ -1817,6 +1878,7 @@ function renderTemplatesView(){
             <option value="approval" ${st.type==='approval'?'selected':''}>Approval</option>
             <option value="gate" ${st.type==='gate'?'selected':''}>Gate</option>
             <option value="checklist" ${st.type==='checklist'?'selected':''}>Checklist</option>
+            <option value="commercial-terms" ${st.type==='commercial-terms'?'selected':''}>Commercial Terms</option>
           </select>
           <input data-stage-edit-owner="${st.id}" value="${escapeHtml(st.owner||'')}" placeholder="Owner" style="flex:1;min-width:140px;font-size:11.5px;">
           <input data-stage-edit-tatmin="${st.id}" type="number" value="${st.tatMinDays !== undefined ? st.tatMinDays : ''}" placeholder="TAT min" style="width:75px;font-size:11.5px;">
@@ -1838,10 +1900,46 @@ function renderTemplatesView(){
         <div class="field"><label>Type</label><select id="newStageType">
           <option value="task">Task</option><option value="approval">Approval</option>
           <option value="gate">Gate</option><option value="checklist">Checklist</option>
+          <option value="commercial-terms">Commercial Terms</option>
         </select></div>
         <div class="field"><label>TAT — min days</label><input id="newStageTatMin" type="number" placeholder="e.g. 0"></div>
         <div class="field"><label>TAT — max days</label><input id="newStageTatMax" type="number" placeholder="e.g. 7"></div>
         <div class="btn-row"><button class="btn primary" id="addStageBtn">Add stage at the end</button></div>
+      </details>
+    </div>`;
+
+    // Commercial Terms field list — same gating as the Stage Editor above, since it's
+    // the same kind of structural, low-frequency edit. Kept as a plain client write
+    // (not a secured Cloud Function like the stage pipeline) since this only changes
+    // form labels/types, not anything that grants access or touches money/approvals.
+    const ctFields = board.commercialTermsFields || [];
+    html += `<div class="admin-section">
+      <details class="collapse-group" data-acc-key="ct-fields">
+        <summary>Commercial Terms Fields <span style="font-weight:400;color:var(--sub);font-size:11px;">${ctFields.length}</span></summary>
+        <div class="sub" style="margin-top:0;">The field list for the Commercial Terms stage. Add, remove, or reorder here — changes apply to every project going forward.</div>
+        ${ctFields.map((f,i)=>`
+          <div class="admin-row" style="flex-wrap:wrap;">
+            <div style="flex:1 1 100%;">
+              <input data-ct-edit-label="${f.id}" value="${escapeHtml(f.label)}" style="font-weight:600;margin-bottom:6px;">
+              <select data-ct-edit-type="${f.id}" style="width:auto;font-size:11px;">
+                <option value="text" ${f.type==='text'?'selected':''}>Short text</option>
+                <option value="textarea" ${f.type==='textarea'?'selected':''}>Long text</option>
+                <option value="number" ${f.type==='number'?'selected':''}>Number</option>
+              </select>
+              <button class="btn ghost" data-ct-move-up="${f.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===0?'disabled':''}>↑</button>
+              <button class="btn ghost" data-ct-move-down="${f.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===ctFields.length-1?'disabled':''}>↓</button>
+              <button class="remove-x" data-ct-delete="${f.id}">✕</button>
+            </div>
+          </div>`).join('')}
+        <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+          <label>New field label</label><input id="newCtFieldLabel" placeholder="e.g. Anchor Tenant Clause">
+        </div>
+        <div class="field"><label>Type</label><select id="newCtFieldType">
+          <option value="text">Short text</option>
+          <option value="textarea">Long text</option>
+          <option value="number">Number</option>
+        </select></div>
+        <div class="btn-row"><button class="btn primary" id="addCtFieldBtn">Add field at the end</button></div>
       </details>
     </div>`;
   }
@@ -1918,6 +2016,53 @@ function renderTemplatesView(){
     await renumberAndSave();
   });
 
+  const saveCtFields = async ()=>{
+    try{
+      await saveBoard();
+    }catch(e){ window.alert('Could not save the field list — try again.'); }
+    render();
+  };
+  el.querySelectorAll('[data-ct-edit-label]').forEach(inp=>{
+    inp.onchange = ()=>{ const f = board.commercialTermsFields.find(x=>x.id===inp.dataset.ctEditLabel); if(f) f.label = inp.value.trim(); saveCtFields(); };
+  });
+  el.querySelectorAll('[data-ct-edit-type]').forEach(sel=>{
+    sel.onchange = ()=>{ const f = board.commercialTermsFields.find(x=>x.id===sel.dataset.ctEditType); if(f) f.type = sel.value; saveCtFields(); };
+  });
+  el.querySelectorAll('[data-ct-move-up]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const cf = board.commercialTermsFields;
+      const i = cf.findIndex(x=>x.id===btn.dataset.ctMoveUp);
+      if(i > 0){ [cf[i-1], cf[i]] = [cf[i], cf[i-1]]; await saveCtFields(); }
+    });
+  });
+  el.querySelectorAll('[data-ct-move-down]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const cf = board.commercialTermsFields;
+      const i = cf.findIndex(x=>x.id===btn.dataset.ctMoveDown);
+      if(i < cf.length-1){ [cf[i], cf[i+1]] = [cf[i+1], cf[i]]; await saveCtFields(); }
+    });
+  });
+  el.querySelectorAll('[data-ct-delete]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const cf = board.commercialTermsFields;
+      const f = cf.find(x=>x.id===btn.dataset.ctDelete);
+      if(!f) return;
+      if(!window.confirm(`Remove "${f.label}"? Any value already entered for it on existing projects stays saved, it just won't show on the form anymore.`)) return;
+      const idx = cf.findIndex(x=>x.id===btn.dataset.ctDelete);
+      cf.splice(idx, 1);
+      await saveCtFields();
+    });
+  });
+  const addCtFieldBtn = document.getElementById('addCtFieldBtn');
+  if(addCtFieldBtn) addCtFieldBtn.onclick = withClickLoading(addCtFieldBtn, 'Working…', async ()=>{
+    const label = document.getElementById('newCtFieldLabel').value.trim();
+    if(!label) return;
+    const type = document.getElementById('newCtFieldType').value;
+    board.commercialTermsFields.push({ id: uid('ctf'), label, type });
+    document.getElementById('newCtFieldLabel').value = '';
+    await saveCtFields();
+  });
+
   el.querySelectorAll('[data-create-project]').forEach(btn=>{
     btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const tid = btn.dataset.createProject;
@@ -1982,6 +2127,7 @@ function renderTabs(){
     let pipColor = 'var(--active)';
     if(curStage && curStage.type==='approval') pipColor = 'var(--appr-ink)';
     if(curStage && curStage.type==='gate') pipColor = 'var(--gate-ink)';
+    if(curStage && curStage.type==='commercial-terms') pipColor = 'var(--comm-ink)';
     if(st.stageData[11] && st.stageData[11].status==='done') pipColor = 'var(--done)';
     if(curT && curT.isOverdue) pipColor = '#C13E3E';
     return `<button class="store-tab ${site.id===activeStore?'active':''}" data-s="${site.id}">
@@ -2019,6 +2165,7 @@ function renderProjectList(){
     else if(doneFinal){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Store opened'; }
     else if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
     else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
+    else if(curStage && curStage.type==='commercial-terms'){ pillBg='var(--comm-bg)'; pillInk='var(--comm-ink)'; }
     if(curT && curT.isOverdue){ pillBg='#F3DCD8'; pillInk='#8A2E2E'; }
     const draftTag = site.status === 'draft' ? `<span style="font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;">Draft</span>` : '';
     html += `<div class="admin-row" data-open-project="${site.id}" style="cursor:pointer;flex-wrap:wrap;">
@@ -2064,6 +2211,7 @@ function renderDashboardView(){
     let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `${curStage.num} — ${curStage.title}` : '';
     if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
     else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
+    else if(curStage && curStage.type==='commercial-terms'){ pillBg='var(--comm-bg)'; pillInk='var(--comm-ink)'; }
     const notStartedButPastDue = !curT && curD && curD.dueDate && Date.now() > curD.dueDate;
     if((curT && curT.isOverdue) || notStartedButPastDue){ pillBg='#F3DCD8'; pillInk='#8A2E2E'; }
 
@@ -2139,6 +2287,7 @@ function renderSummary(){
   else if(doneFinal){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Store opened'; }
   else if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
   else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
+  else if(curStage && curStage.type==='commercial-terms'){ pillBg='var(--comm-bg)'; pillInk='var(--comm-ink)'; }
   // Flexible mode: work on a later stage can complete while an earlier one is still open —
   // make that visible instead of hiding it behind a single "current stage" label.
   let doneAheadNote = '';
@@ -2705,6 +2854,29 @@ function openSheet(stageId){
     if(d.status === 'done'){
       inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
     }
+  } else if(st.type === 'commercial-terms'){
+    d.commercialTerms = d.commercialTerms || {};
+    const fields = board.commercialTermsFields || [];
+    inner += `<details class="collapse-group" open><summary>Commercial Terms (${fields.length} fields)</summary>`;
+    fields.forEach(f=>{
+      const val = d.commercialTerms[f.id] || '';
+      if(f.type === 'textarea'){
+        inner += `<div class="field"><label>${escapeHtml(f.label)}</label><textarea data-ct-field="${f.id}">${escapeHtml(val)}</textarea></div>`;
+      } else {
+        inner += `<div class="field"><label>${escapeHtml(f.label)}</label><input data-ct-field="${f.id}" type="${f.type==='number'?'number':'text'}" value="${escapeHtml(val)}"></div>`;
+      }
+    });
+    inner += `</details>`;
+    inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
+    inner += `<div class="btn-row"><button class="btn ghost" id="saveCommercialTermsBtn">Save terms</button></div>`;
+    if(d.status !== 'done'){
+      inner += `<div class="btn-row">
+        <button class="btn ghost" id="saveNotesBtn">Save notes</button>
+        <button class="btn primary" id="completeBtn">Mark complete</button>
+      </div>`;
+    }else{
+      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    }
   } else {
     inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
     if(d.status !== 'done'){
@@ -2988,6 +3160,16 @@ function wireSheetActions(st, s, d){
       d.finalStage[f.key] = f.dateTriplet ? readTriplet('fin', f.key) : document.getElementById('fin_'+f.key).value.trim();
     });
     d.updatedBy = who; d.updatedAt = Date.now();
+    await saveBoard(); render(); openSheet(st.id);
+  });
+
+  const saveCommercialTermsBtn = document.getElementById('saveCommercialTermsBtn');
+  if(saveCommercialTermsBtn) saveCommercialTermsBtn.onclick = withClickLoading(saveCommercialTermsBtn, 'Working…', async ()=>{
+    d.commercialTerms = d.commercialTerms || {};
+    document.querySelectorAll('[data-ct-field]').forEach(el=>{
+      d.commercialTerms[el.dataset.ctField] = el.value.trim();
+    });
+    d.updatedBy = getWho(); d.updatedAt = Date.now();
     await saveBoard(); render(); openSheet(st.id);
   });
 
