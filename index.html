@@ -416,6 +416,7 @@
     </div>
     <div class="nav-tabs">
       <button class="nav-tab" id="navTracker"><span class="nav-tab-short">T</span><span class="nav-tab-label">Tracker</span></button>
+      <button class="nav-tab" id="navDashboard"><span class="nav-tab-short">D</span><span class="nav-tab-label">Dashboard</span></button>
       <button class="nav-tab" id="navMyTasks"><span class="nav-tab-short">M</span><span class="nav-tab-label">My Tasks</span></button>
       <button class="nav-tab" id="navFiles"><span class="nav-tab-short">F</span><span class="nav-tab-label">Files</span></button>
       <button class="nav-tab" id="navCapex"><span class="nav-tab-short">C</span><span class="nav-tab-label">CapEx</span></button>
@@ -437,6 +438,7 @@
     <div class="store-summary" id="storeSummary"></div>
     <div id="flow" class="loading">Loading board…</div>
     <div id="myTasksView" class="admin-wrap" style="display:none;"></div>
+    <div id="dashboardView" class="admin-wrap" style="display:none;"></div>
     <div id="filesView" class="admin-wrap" style="display:none;"></div>
     <div id="capexView" class="admin-wrap" style="display:none;"></div>
     <div id="templatesView" class="admin-wrap" style="display:none;"></div>
@@ -1039,6 +1041,59 @@ function recompute(id){
   });
 }
 
+// Once P&L (stage 3) has started, every later stage gets a projected due date — walking
+// the pipeline forward from stage 3's start, stacking each stage's TAT max as its planned
+// duration. Anchored on REAL progress, not a rigid original plan: a stage that's already
+// done anchors the next one on its actual completion time, so if something finishes late
+// (or gets declined and reworked), every later due date shifts automatically — recomputed
+// fresh each time, not stored as a one-time snapshot.
+function recalculateDueDates(id){
+  const s = storeState(id);
+  const plStage = s.stageData[3];
+  if(!plStage || !plStage.startedAt) return; // nothing to project until P&L actually starts
+
+  const startIdx = STAGES.findIndex(st=>st.id===3);
+  if(startIdx === -1) return;
+  let anchor = plStage.startedAt;
+  let i = startIdx;
+
+  while(i < STAGES.length){
+    const st = STAGES[i];
+    const d = s.stageData[st.id];
+    if(!d){ i++; continue; }
+
+    if(d.status === 'done'){
+      // Anchor the rest of the schedule on when this one ACTUALLY finished, not when
+      // it was originally planned to — this is what makes later due dates shift.
+      anchor = d.updatedAt || anchor;
+      i++;
+      continue;
+    }
+
+    // Consecutive stages sharing a parallelGroup start together at the same anchor and
+    // each get their own due date, but the pipeline only moves past the group once the
+    // LONGEST of them would finish — not the sum of both.
+    if(st.parallelGroup){
+      const group = [st];
+      let j = i+1;
+      while(j < STAGES.length && STAGES[j].parallelGroup === st.parallelGroup){ group.push(STAGES[j]); j++; }
+      let maxTat = 0;
+      group.forEach(gst=>{
+        const gd = s.stageData[gst.id];
+        if(gd && gd.status !== 'done' && gd.status !== 'skip') gd.dueDate = anchor + (gst.tatMaxDays||0) * 86400000;
+        maxTat = Math.max(maxTat, gst.tatMaxDays||0);
+      });
+      anchor = anchor + maxTat * 86400000;
+      i = j;
+      continue;
+    }
+
+    d.dueDate = anchor + (st.tatMaxDays||0) * 86400000;
+    anchor = d.dueDate;
+    i++;
+  }
+}
+
 // Admin-editable TAT overrides live in board.tatOverrides, keyed 'stage_<id>' or 'task_<key>'.
 // Falls back to the built-in default (from STAGES / STAGE11_TASKS) when no override is set.
 // Scoped per individual project, not shared globally — board.tatOverrides is
@@ -1090,6 +1145,7 @@ function render(){
   document.getElementById('navAdmin').style.display = isAdmin() ? '' : 'none';
   document.getElementById('navMyTasks').style.display = findMyStakeholder() ? '' : 'none';
   document.getElementById('navTracker').classList.toggle('active', currentView==='tracker');
+  document.getElementById('navDashboard').classList.toggle('active', currentView==='dashboard');
   document.getElementById('navMyTasks').classList.toggle('active', currentView==='myTasks');
   document.getElementById('navFiles').classList.toggle('active', currentView==='files');
   document.getElementById('navCapex').classList.toggle('active', currentView==='capex');
@@ -1106,6 +1162,7 @@ function render(){
   if(deleteRowEl) deleteRowEl.style.display = inDetailView ? '' : 'none';
   document.getElementById('projectListView').style.display = (currentView==='tracker' && trackerSubView==='list') ? 'block' : 'none';
   document.getElementById('myTasksView').style.display = currentView==='myTasks' ? 'block' : 'none';
+  document.getElementById('dashboardView').style.display = currentView==='dashboard' ? 'block' : 'none';
   document.getElementById('filesView').style.display = currentView==='files' ? 'block' : 'none';
   document.getElementById('capexView').style.display = currentView==='capex' ? 'block' : 'none';
   document.getElementById('templatesView').style.display = currentView==='templates' ? 'block' : 'none';
@@ -1121,6 +1178,8 @@ function render(){
     }
   } else if(currentView === 'myTasks'){
     renderMyTasks();
+  } else if(currentView === 'dashboard'){
+    renderDashboardView();
   } else if(currentView === 'files'){
     renderFilesView();
   } else if(currentView === 'capex'){
@@ -1384,7 +1443,7 @@ function renderFilesView(){
     node.onclick = ()=> openFilePreview(node.dataset.url, node.dataset.name);
   });
   el.querySelectorAll('[data-files-del]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const [siteId, stageIdStr, path, uploadedAtStr] = btn.dataset.filesDel.split('|');
       const stageId = parseInt(stageIdStr);
       const uploadedAt = parseFloat(uploadedAtStr);
@@ -1397,7 +1456,7 @@ function renderFilesView(){
       try{ if(att.path) await storage.ref(att.path).delete(); }catch(e){ console.error('storage delete failed', e); }
       d.attachments.splice(idx, 1);
       await saveBoard(); render();
-    };
+    });
   });
 }
 
@@ -1557,19 +1616,19 @@ function renderCapexView(){
     };
   });
   el.querySelectorAll('[data-capex-del-item]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       if(!window.confirm('Remove this line item?')) return;
       c.lineItems = c.lineItems.filter(x=>x.id!==btn.dataset.capexDelItem);
       await saveBoard(); render();
-    };
+    });
   });
   const addItemBtn = document.getElementById('capexAddItemBtn');
-  if(addItemBtn) addItemBtn.onclick = async ()=>{
+  if(addItemBtn) addItemBtn.onclick = withClickLoading(addItemBtn, 'Working…', async ()=>{
     const name = document.getElementById('capexNewItemName').value.trim();
     if(!name) return;
     c.lineItems.push({ id: uid('li'), name, qty:'', tentativeRate:'', actualRate:'', actualBy:'', actualAt:0 });
     await saveBoard(); render();
-  };
+  });
   const downloadSampleCapexTentative = document.getElementById('downloadSampleCapexTentative');
   if(downloadSampleCapexTentative) downloadSampleCapexTentative.onclick = ()=>{
     downloadSampleCsv(['Item','Quantity','Tentative Rate'], [
@@ -1577,7 +1636,7 @@ function renderCapexView(){
     ], 'sample-capex-tentative.csv');
   };
   const capexBulkBtn = document.getElementById('capexBulkBtn');
-  if(capexBulkBtn) capexBulkBtn.onclick = async ()=>{
+  if(capexBulkBtn) capexBulkBtn.onclick = withClickLoading(capexBulkBtn, 'Working…', async ()=>{
     const file = document.getElementById('capexBulkFile').files[0];
     const statusEl = document.getElementById('capexBulkStatus');
     if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
@@ -1602,7 +1661,7 @@ function renderCapexView(){
     }catch(e){
       statusEl.textContent = 'Import failed: ' + e.message;
     }
-  };
+  });
   const downloadSampleCapexActual = document.getElementById('downloadSampleCapexActual');
   if(downloadSampleCapexActual) downloadSampleCapexActual.onclick = ()=>{
     downloadSampleCsv(['Item','Actual Rate'], [
@@ -1610,7 +1669,7 @@ function renderCapexView(){
     ], 'sample-capex-actual.csv');
   };
   const capexActualBulkBtn = document.getElementById('capexActualBulkBtn');
-  if(capexActualBulkBtn) capexActualBulkBtn.onclick = async ()=>{
+  if(capexActualBulkBtn) capexActualBulkBtn.onclick = withClickLoading(capexActualBulkBtn, 'Working…', async ()=>{
     const file = document.getElementById('capexActualBulkFile').files[0];
     const statusEl = document.getElementById('capexActualBulkStatus');
     if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
@@ -1630,9 +1689,9 @@ function renderCapexView(){
     }catch(e){
       statusEl.textContent = 'Import failed: ' + (e.message || e);
     }
-  };
+  });
   const finalizeBtn = document.getElementById('capexFinalizeBtn');
-  if(finalizeBtn) finalizeBtn.onclick = async ()=>{
+  if(finalizeBtn) finalizeBtn.onclick = withClickLoading(finalizeBtn, 'Working…', async ()=>{
     if(!window.confirm('Finalize the tentative CapEx? Line items lock for editing until actuals are reconciled.')) return;
     try{
       const res = await finalizeCapexFn({ siteId: activeStore });
@@ -1641,7 +1700,7 @@ function renderCapexView(){
       }
       render();
     }catch(e){ window.alert(e.message || 'Could not finalize CapEx — try again.'); }
-  };
+  });
 }
 
 // Visibility rule: Admin sees everything. Drafts are creator-only. Live/closed projects
@@ -1822,21 +1881,21 @@ function renderTemplatesView(){
     chk.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(chk.dataset.stageEditBlroly)); if(st) st.bangaloreOnly = chk.checked; renumberAndSave(); };
   });
   el.querySelectorAll('[data-stage-move-up]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const id = parseInt(btn.dataset.stageMoveUp);
       const i = STAGES.findIndex(x=>x.id===id);
       if(i > 0){ [STAGES[i-1], STAGES[i]] = [STAGES[i], STAGES[i-1]]; await renumberAndSave(); }
-    };
+    });
   });
   el.querySelectorAll('[data-stage-move-down]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const id = parseInt(btn.dataset.stageMoveDown);
       const i = STAGES.findIndex(x=>x.id===id);
       if(i < STAGES.length-1){ [STAGES[i], STAGES[i+1]] = [STAGES[i+1], STAGES[i]]; await renumberAndSave(); }
-    };
+    });
   });
   el.querySelectorAll('[data-stage-delete]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const id = parseInt(btn.dataset.stageDelete);
       const st = STAGES.find(x=>x.id===id);
       if(!st) return;
@@ -1844,10 +1903,10 @@ function renderTemplatesView(){
       const idx = STAGES.findIndex(x=>x.id===id);
       STAGES.splice(idx, 1);
       await renumberAndSave();
-    };
+    });
   });
   const addStageBtn = document.getElementById('addStageBtn');
-  if(addStageBtn) addStageBtn.onclick = async ()=>{
+  if(addStageBtn) addStageBtn.onclick = withClickLoading(addStageBtn, 'Working…', async ()=>{
     const title = document.getElementById('newStageTitle').value.trim();
     if(!title) return;
     const type = document.getElementById('newStageType').value;
@@ -1857,10 +1916,10 @@ function renderTemplatesView(){
     STAGES.push({ id: newId, num: '00', title, type, owner: '', duration: `${tatMinDays}-${tatMaxDays}d`, tatMinDays, tatMaxDays, desc: '' });
     document.getElementById('newStageTitle').value = '';
     await renumberAndSave();
-  };
+  });
 
   el.querySelectorAll('[data-create-project]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const tid = btn.dataset.createProject;
       const name = document.getElementById(`newProjName_${tid}`).value.trim();
       const city = document.getElementById(`newProjCity_${tid}`).value;
@@ -1873,10 +1932,10 @@ function renderTemplatesView(){
       await saveBoard();
       activeStore = id;
       render();
-    };
+    });
   });
   el.querySelectorAll('[data-publish-draft]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const site = getSite(btn.dataset.publishDraft);
       if(!site) return;
       site.status = 'live';
@@ -1890,17 +1949,17 @@ function renderTemplatesView(){
       }
       await saveBoard();
       render();
-    };
+    });
   });
   const saveTemplateBtn = document.getElementById('saveAsTemplateBtn');
-  if(saveTemplateBtn) saveTemplateBtn.onclick = async ()=>{
+  if(saveTemplateBtn) saveTemplateBtn.onclick = withClickLoading(saveTemplateBtn, 'Working…', async ()=>{
     const name = document.getElementById('saveTemplateName').value.trim();
     const desc = document.getElementById('saveTemplateDesc').value.trim();
     if(!name) return;
     board.templates.push({ id: uid('tmpl'), name, description: desc, builtIn:false, ownerId: me, createdAt: Date.now() });
     await saveBoard();
     render();
-  };
+  });
   el.querySelectorAll('[data-transfer-template]').forEach(sel=>{
     sel.onchange = async ()=>{
       if(!sel.value) return;
@@ -1981,6 +2040,93 @@ function renderProjectList(){
   });
 }
 
+function renderDashboardView(){
+  const el = document.getElementById('dashboardView');
+  // Company-wide — every live project, not just the ones this signed-in person happens
+  // to be assigned to (that's what the Tracker's own project list is for).
+  const sites = board.sites.filter(s => !s.deletedAt && s.status !== 'draft' && !(storeState(s.id)||{}).projectClosed);
+  let html = `<div class="admin-section">
+    <h3>All Projects</h3>
+    <div class="sub">${sites.length} live project${sites.length===1?'':'s'} across every site. Tap one to open it.</div>
+  </div>`;
+
+  if(sites.length === 0){
+    html += `<div class="empty-note">No live projects right now.</div>`;
+  }
+
+  sites.forEach(site=>{
+    const s = storeState(site.id);
+    if(!s) return;
+    recalculateDueDates(site.id); // dashboard shows every project, not just the one currently open — keep due dates fresh for each
+    const curStage = STAGES.find(x=>x.id===s.current);
+    const curD = s.stageData[s.current];
+    const curT = curStage ? stageTiming(curStage, curD, site.id) : null;
+    let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `${curStage.num} — ${curStage.title}` : '';
+    if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
+    else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
+    const notStartedButPastDue = !curT && curD && curD.dueDate && Date.now() > curD.dueDate;
+    if((curT && curT.isOverdue) || notStartedButPastDue){ pillBg='#F3DCD8'; pillInk='#8A2E2E'; }
+
+    let timingBit = '';
+    if(curT) timingBit = curT.isOverdue ? `${curT.overdueDays}d overdue` : `Day ${curT.elapsedDays} of ${curT.tatMin}-${curT.tatMax}d TAT`;
+    else if(notStartedButPastDue) timingBit = `${Math.floor((Date.now()-curD.dueDate)/86400000)}d overdue — not started`;
+    else if(curD && curD.dueDate) timingBit = `Projected due ${new Date(curD.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
+
+    // Who's actually responsible for the current stage right now.
+    const assignedNames = curD ? (curD.assignedTo||[]).map(id=>{
+      const p = board.stakeholders.find(x=>x.id===id);
+      return p ? p.name : null;
+    }).filter(Boolean) : [];
+    const assignedText = assignedNames.length ? assignedNames.join(', ') : 'Unassigned';
+
+    // The stage immediately before this one — what was just completed, and when. If it
+    // was part of a parallel pair, show whichever of the two actually finished last,
+    // since that's the one that determined when the pipeline could move forward.
+    const curIdx = STAGES.findIndex(x=>x.id===s.current);
+    let prevBit = '';
+    if(curIdx > 0){
+      const prevStage = STAGES[curIdx-1];
+      let group = [prevStage];
+      if(prevStage.parallelGroup){
+        group = STAGES.filter(x=>x.parallelGroup===prevStage.parallelGroup);
+      }
+      let latestDone = null;
+      let anySkip = false, anyPending = false;
+      group.forEach(gst=>{
+        const gd = s.stageData[gst.id];
+        if(!gd) return;
+        if(gd.status==='done'){ if(!latestDone || (gd.updatedAt||0) > latestDone.at) latestDone = {stage:gst, at: gd.updatedAt||0}; }
+        else if(gd.status==='skip') anySkip = true;
+        else anyPending = true;
+      });
+      if(latestDone){
+        prevBit = `Last: ${latestDone.stage.num} · ${latestDone.stage.title} — completed ${new Date(latestDone.at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
+      } else if(anySkip && !anyPending){
+        prevBit = `Last: ${group.map(g=>g.num).join('/')} — skipped`;
+      }
+    }
+
+    html += `<div class="admin-row" data-open-dash-project="${site.id}" style="cursor:pointer;flex-wrap:wrap;">
+      <div style="flex:1 1 100%;">
+        <div class="admin-row-main">${escapeHtml(site.name)}</div>
+        <div class="admin-row-sub">${escapeHtml(FORMATS[site.format] ? FORMATS[site.format].label : '')} · ${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)}${timingBit ? ' · '+escapeHtml(timingBit) : ''}</div>
+        <div class="admin-row-sub" style="margin-top:2px;">Assigned: ${escapeHtml(assignedText)}${prevBit ? ' · '+escapeHtml(prevBit) : ''}</div>
+      </div>
+      <div class="stage-pill" style="background:${pillBg};color:${pillInk};margin-top:6px;">${escapeHtml(label)}</div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+  el.querySelectorAll('[data-open-dash-project]').forEach(row=>{
+    row.onclick = ()=>{
+      activeStore = row.dataset.openDashProject;
+      currentView = 'tracker';
+      trackerSubView = 'detail';
+      render();
+    };
+  });
+}
+
 function renderSummary(){
   if(!activeStore || !getSite(activeStore)){ document.getElementById('storeSummary').innerHTML=''; return; }
   const s = storeState(activeStore);
@@ -2031,7 +2177,8 @@ function renderSummary(){
       ${!capexOk ? `<div class="warn" style="margin-bottom:8px;">⚠ Not all CapEx actual costs are recorded yet.</div>` : ''}
       <button class="btn primary" id="closeProjectBtn" style="width:100%;">Close Project</button>
     </div>`);
-    document.getElementById('closeProjectBtn').onclick = async ()=>{
+    const _loadBtn_closeProjectBtn = document.getElementById('closeProjectBtn');
+    _loadBtn_closeProjectBtn.onclick = withClickLoading(_loadBtn_closeProjectBtn, 'Working…', async ()=>{
       let overrideReason = '';
       if(capexOk){
         if(!window.confirm(`Close ${site.name}? All snags are signed off and every stage is complete. This marks the project as formally closed.`)) return;
@@ -2048,7 +2195,7 @@ function renderSummary(){
         }
         render();
       }catch(e){ window.alert(e.message || 'Could not close the project — try again.'); }
-    };
+    });
   }
 
   const oldDeleteRow = document.getElementById('deleteProjectRow');
@@ -2058,7 +2205,8 @@ function renderSummary(){
     anchorEl.insertAdjacentHTML('afterend', `<div id="deleteProjectRow" style="padding:0 14px 14px;">
       <button class="btn ghost" id="deleteProjectBtn" style="width:100%;color:#8A2E2E;border-color:#8A2E2E;">Delete Project</button>
     </div>`);
-    document.getElementById('deleteProjectBtn').onclick = async ()=>{
+    const _loadBtn_deleteProjectBtn = document.getElementById('deleteProjectBtn');
+    _loadBtn_deleteProjectBtn.onclick = withClickLoading(_loadBtn_deleteProjectBtn, 'Working…', async ()=>{
       const typed = window.prompt(`This removes "${site.name}" from view for everyone. Nothing is permanently erased — an Admin can restore it later from Admin \u2192 Recently Deleted.\n\nType the project name exactly to confirm:`);
       if(typed === null) return;
       if(typed !== site.name){ window.alert("That didn't match — nothing was deleted."); return; }
@@ -2070,7 +2218,7 @@ function renderSummary(){
       currentView = 'tracker';
       trackerSubView = 'list';
       render();
-    };
+    });
   }
 }
 
@@ -2102,6 +2250,7 @@ function renderFlow(){
     return;
   }
   recompute(activeStore);
+  recalculateDueDates(activeStore);
   const s = storeState(activeStore);
   const site = getSite(activeStore);
   el.className = '';
@@ -2110,7 +2259,8 @@ function renderFlow(){
   const overdueStages = STAGES.filter(st=>{
     const d = s.stageData[st.id];
     const t = stageTiming(st, d, activeStore);
-    return t && t.isOverdue;
+    if(t && t.isOverdue) return true;
+    return !t && d.dueDate && Date.now() > d.dueDate && d.status !== 'done' && d.status !== 'skip';
   });
   if(overdueStages.length){
     html += `<div class="delay-banner">` + overdueStages.map(st=>{
@@ -2119,7 +2269,9 @@ function renderFlow(){
       const reasonBit = d.delayReason
         ? `Reason logged: "${escapeAndLinkify(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}`
         : `No reason logged yet — tap the stage to log one.`;
-      return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${t.tatMin}-${t.tatMax}d TAT. ${reasonBit}</div>`;
+      if(t) return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${t.tatMin}-${t.tatMax}d TAT. ${reasonBit}</div>`;
+      const dueDays = Math.floor((Date.now()-d.dueDate)/86400000);
+      return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) hasn't started yet and is already ${dueDays}d past its projected due date. ${reasonBit}</div>`;
     }).join('') + `</div>`;
   }
 
@@ -2134,12 +2286,15 @@ function renderFlow(){
     if(d.status === 'skip') return { st, d, skip:true };
     const t = stageTiming(st, d, activeStore);
     let dotCls = d.status;
-    if(t && t.isOverdue) dotCls = 'overdue';
-    let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : (t && t.isOverdue ? '!' : st.num));
+    const notStartedButPastDue = !t && d.dueDate && Date.now() > d.dueDate && d.status !== 'done' && d.status !== 'skip';
+    if((t && t.isOverdue) || notStartedButPastDue) dotCls = 'overdue';
+    let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : ((t && t.isOverdue) || notStartedButPastDue ? '!' : st.num));
     let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back'}[d.status];
     const defaultTat = effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays);
     let slaBit = `TAT ${defaultTat.min}-${defaultTat.max}d`;
     if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over TAT` : `Day ${t.elapsedDays} of ${t.tatMin}-${t.tatMax}d TAT`;
+    else if(notStartedButPastDue) slaBit = `${Math.floor((Date.now()-d.dueDate)/86400000)}d overdue — not started yet`;
+    else if(d.dueDate) slaBit = `Projected due ${new Date(d.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
     let ownerText = st.owner;
     if(st.id === 2) ownerText = st.owner + ` · target ${FORMATS[site.format].sizeText}`;
     const assignedNames = (d.assignedTo||[]).map(id=>{
@@ -2631,14 +2786,14 @@ function wireSheetActions(st, s, d){
     await saveBoard(); render(); openSheet(st.id);
   };
   document.querySelectorAll('[data-remove-assignee]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       d.assignedTo = (d.assignedTo||[]).filter(x=>x!==btn.dataset.removeAssignee);
       d.updatedBy = getWho(); d.updatedAt = Date.now();
       await saveBoard(); render(); openSheet(st.id);
-    };
+    });
   });
   const transferBtn = document.getElementById('stageTransferBtn');
-  if(transferBtn) transferBtn.onclick = async ()=>{
+  if(transferBtn) transferBtn.onclick = withClickLoading(transferBtn, 'Working…', async ()=>{
     const myId = (findMyStakeholder()||{}).id;
     const newId = personPickerSelectedId('stageTransferTo', board.stakeholders.filter(p=>p.id!==myId));
     if(!newId) return;
@@ -2649,10 +2804,10 @@ function wireSheetActions(st, s, d){
     d.updatedBy = getWho(); d.updatedAt = Date.now();
     s.log.push({stageId:st.id, text:`${oldPerson?oldPerson.name:getWho()} transferred their part to ${newPerson?newPerson.name:'someone'}`, at: Date.now()});
     await saveBoard(); render(); openSheet(st.id);
-  };
+  });
 
   const flagBlockerBtn = document.getElementById('flagBlockerBtn');
-  if(flagBlockerBtn) flagBlockerBtn.onclick = async ()=>{
+  if(flagBlockerBtn) flagBlockerBtn.onclick = withClickLoading(flagBlockerBtn, 'Working…', async ()=>{
     const personId = personPickerSelectedId('blockerPerson', board.stakeholders);
     const note = document.getElementById('blockerNote').value.trim();
     if(!personId || !note){
@@ -2666,7 +2821,7 @@ function wireSheetActions(st, s, d){
     const person = board.stakeholders.find(p=>p.id===personId);
     s.log.push({stageId:st.id, text:`Blocker flagged by ${who} — waiting on ${person?person.name:'someone'}`, at: Date.now()});
     await saveBoard(); render(); openSheet(st.id);
-  };
+  });
 
   const uploadBtn = document.getElementById('uploadAttachmentBtn');
   const fileInputEl = document.getElementById('attachmentFile');
@@ -2681,7 +2836,7 @@ function wireSheetActions(st, s, d){
       statusEl.textContent = files.length > 1 ? `${files.length} files selected.` : '';
     }
   };
-  if(uploadBtn) uploadBtn.onclick = async ()=>{
+  if(uploadBtn) uploadBtn.onclick = withClickLoading(uploadBtn, 'Working…', async ()=>{
     const fileInput = document.getElementById('attachmentFile');
     const files = Array.from(fileInput.files);
     const statusEl = document.getElementById('uploadStatus');
@@ -2706,7 +2861,7 @@ function wireSheetActions(st, s, d){
     }
     await saveBoard();
     render(); openSheet(st.id);
-  };
+  });
   document.querySelectorAll('[data-preview]').forEach(el=>{
     el.onclick = ()=>{
       const att = d.attachments[parseInt(el.dataset.preview)];
@@ -2714,7 +2869,7 @@ function wireSheetActions(st, s, d){
     };
   });
   document.querySelectorAll('[data-del-attachment]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const i = parseInt(btn.dataset.delAttachment);
       const att = d.attachments[i];
       if(!att) return;
@@ -2724,7 +2879,7 @@ function wireSheetActions(st, s, d){
       try{ if(att.path) await storage.ref(att.path).delete(); }catch(e){ console.error('storage delete failed', e); }
       d.attachments.splice(i, 1);
       await saveBoard(); render(); openSheet(st.id);
-    };
+    });
   });
 
 
@@ -2791,14 +2946,14 @@ function wireSheetActions(st, s, d){
     };
   });
   document.querySelectorAll('[data-task-remove-assignee]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const [key, pid] = btn.dataset.taskRemoveAssignee.split('|');
       if(d.tasks[key]) d.tasks[key].assignedTo = (d.tasks[key].assignedTo||[]).filter(x=>x!==pid);
       await saveBoard(); render(); openSheet(st.id);
-    };
+    });
   });
   document.querySelectorAll('[data-task-transfer-btn]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const key = btn.dataset.taskTransferBtn;
       const myId2 = (findMyStakeholder()||{}).id;
       const newId = personPickerSelectedId(`taskTransfer_${key}`, board.stakeholders.filter(p=>p.id!==myId2));
@@ -2809,11 +2964,11 @@ function wireSheetActions(st, s, d){
       if(!d.tasks[key].assignedTo.includes(newId)) d.tasks[key].assignedTo.push(newId);
       s.log.push({stageId:11, text:`${oldP?oldP.name:getWho()} transferred "${key}" to ${newP?newP.name:'someone'}`, at: Date.now()});
       await saveBoard(); render(); openSheet(st.id);
-    };
+    });
   });
 
   const saveChecklistBtn = document.getElementById('saveChecklistBtn');
-  if(saveChecklistBtn) saveChecklistBtn.onclick = async ()=>{
+  if(saveChecklistBtn) saveChecklistBtn.onclick = withClickLoading(saveChecklistBtn, 'Working…', async ()=>{
     const who = getWho();
     function readTriplet(prefix, key){
       const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
@@ -2834,7 +2989,7 @@ function wireSheetActions(st, s, d){
     });
     d.updatedBy = who; d.updatedAt = Date.now();
     await saveBoard(); render(); openSheet(st.id);
-  };
+  });
 
   document.querySelectorAll('[data-clear-target]').forEach(btn=>{
     btn.onclick = ()=>{
@@ -2844,16 +2999,16 @@ function wireSheetActions(st, s, d){
   });
 
   const logDelayBtn = document.getElementById('logDelayBtn');
-  if(logDelayBtn) logDelayBtn.onclick = async ()=>{
+  if(logDelayBtn) logDelayBtn.onclick = withClickLoading(logDelayBtn, 'Working…', async ()=>{
     const who = getWho();
     d.delayReason = document.getElementById('delayReasonField').value.trim();
     d.delayLoggedBy = who; d.delayLoggedAt = Date.now();
     s.log.push({stageId:st.id, text:`Delay logged by ${who}: "${d.delayReason}"`, at: Date.now()});
     await saveBoard(); render(); openSheet(st.id);
-  };
+  });
 
   document.querySelectorAll('[data-approver]').forEach(chip=>{
-    chip.onclick = async ()=>{
+    chip.onclick = withClickLoading(chip, 'Working…', async ()=>{
       const pid = chip.dataset.approver;
       const myId = (findMyStakeholder()||{}).id;
       // Defense in depth — only that seat's own person can toggle it, no Admin
@@ -2874,11 +3029,11 @@ function wireSheetActions(st, s, d){
       }catch(e){
         window.alert(e.message || 'Could not update your approval — try again.');
       }
-    };
+    });
   });
 
   const declineBtn = document.getElementById('declineBtn');
-  if(declineBtn) declineBtn.onclick = async ()=>{
+  if(declineBtn) declineBtn.onclick = withClickLoading(declineBtn, 'Working…', async ()=>{
     const who = getWho();
     d.status = 'declined'; d.approvals = {}; d.updatedBy = who; d.updatedAt = Date.now();
     d.delayReason=''; d.delayLoggedBy=''; d.delayLoggedAt=0;
@@ -2897,18 +3052,18 @@ function wireSheetActions(st, s, d){
     }
     s.log.push({stageId:st.id, text:`Declined by ${who}, restarted to Stage ${target?target.num:''}`, at: Date.now()});
     await saveBoard(); render(); closeSheet();
-  };
+  });
 
   const confirmBtn = document.getElementById('confirmBtn');
-  if(confirmBtn) confirmBtn.onclick = async ()=>{
+  if(confirmBtn) confirmBtn.onclick = withClickLoading(confirmBtn, 'Working…', async ()=>{
     const who = getWho();
     d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
     s.log.push({stageId:st.id, text:`Load confirmed, logged by ${who}`, at: Date.now()});
     await saveBoard(); render(); closeSheet();
-  };
+  });
 
   const completeBtn = document.getElementById('completeBtn');
-  if(completeBtn) completeBtn.onclick = async ()=>{
+  if(completeBtn) completeBtn.onclick = withClickLoading(completeBtn, 'Working…', async ()=>{
     const who = getWho();
     const notes = document.getElementById('notesField');
     if(notes) d.notes = notes.value.trim();
@@ -2917,16 +3072,16 @@ function wireSheetActions(st, s, d){
     if(st.id === 7) s.signingDate = Date.now();
     s.log.push({stageId:st.id, text:`Marked complete by ${who}`, at: Date.now()});
     await saveBoard(); render(); closeSheet();
-  };
+  });
 
   const saveNotesBtn = document.getElementById('saveNotesBtn');
-  if(saveNotesBtn) saveNotesBtn.onclick = async ()=>{
+  if(saveNotesBtn) saveNotesBtn.onclick = withClickLoading(saveNotesBtn, 'Working…', async ()=>{
     const who = getWho();
     d.notes = document.getElementById('notesField').value.trim();
     if(st.id === 3) d.financials = readFxInputs();
     d.updatedBy = who; d.updatedAt = Date.now();
     await saveBoard(); render(); closeSheet();
-  };
+  });
 }
 function closeSheet(){ document.getElementById('sheetBackdrop').classList.remove('open'); }
 document.getElementById('sheetBackdrop').onclick = (e)=>{ if(e.target.id==='sheetBackdrop') closeSheet(); };
@@ -3153,7 +3308,8 @@ function renderAdmin(){
 
   wireAccordionPersistence(el);
 
-  document.getElementById('admAddAdminEmail').onclick = async ()=>{
+  const _loadBtn_admAddAdminEmail = document.getElementById('admAddAdminEmail');
+  _loadBtn_admAddAdminEmail.onclick = withClickLoading(_loadBtn_admAddAdminEmail, 'Working…', async ()=>{
     const email = document.getElementById('admNewAdminEmail').value.trim().toLowerCase();
     if(!isValidEmail(email)) return;
     if(ROOT_ADMIN_EMAILS.includes(email) || adminEmailsList.includes(email)) return;
@@ -3162,18 +3318,18 @@ function renderAdmin(){
       document.getElementById('admNewAdminEmail').value = '';
       render();
     }catch(e){ window.alert(e.message || 'Could not add that admin.'); }
-  };
+  });
   el.querySelectorAll('[data-restore-project]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const site = board.sites.find(s=>s.id===btn.dataset.restoreProject);
       if(!site) return;
       delete site.deletedAt;
       delete site.deletedBy;
       await saveBoard(); render();
-    };
+    });
   });
   el.querySelectorAll('[data-permadelete-project]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const site = board.sites.find(s=>s.id===btn.dataset.permadeleteProject);
       if(!site) return;
       const typed = window.prompt(`This permanently erases "${site.name}" and everything in it — this genuinely cannot be undone, not even by an Admin.\n\nType the project name exactly to confirm:`);
@@ -3182,15 +3338,16 @@ function renderAdmin(){
       board.sites = board.sites.filter(s=>s.id!==site.id);
       delete board.siteData[site.id];
       await saveBoard(); render();
-    };
+    });
   });
   el.querySelectorAll('[data-del-admin-email]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       try{ await removeAdminFn({ email: btn.dataset.delAdminEmail }); render(); }
       catch(e){ window.alert(e.message || 'Could not remove that admin.'); }
-    };
+    });
   });
-  document.getElementById('admAddDevEmail').onclick = async ()=>{
+  const _loadBtn_admAddDevEmail = document.getElementById('admAddDevEmail');
+  _loadBtn_admAddDevEmail.onclick = withClickLoading(_loadBtn_admAddDevEmail, 'Working…', async ()=>{
     const email = document.getElementById('admNewDevEmail').value.trim().toLowerCase();
     if(!isValidEmail(email)) return;
     if(developerEmailsList.includes(email)) return;
@@ -3199,27 +3356,28 @@ function renderAdmin(){
       document.getElementById('admNewDevEmail').value = '';
       render();
     }catch(e){ window.alert(e.message || 'Could not add that developer.'); }
-  };
+  });
   el.querySelectorAll('[data-del-dev-email]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       try{ await removeDeveloperFn({ email: btn.dataset.delDevEmail }); render(); }
       catch(e){ window.alert(e.message || 'Could not remove that developer.'); }
-    };
+    });
   });
 
-  document.getElementById('admAddCity').onclick = async ()=>{
+  const _loadBtn_admAddCity = document.getElementById('admAddCity');
+  _loadBtn_admAddCity.onclick = withClickLoading(_loadBtn_admAddCity, 'Working…', async ()=>{
     const code = document.getElementById('admCityCode').value.trim().toUpperCase();
     const name = document.getElementById('admCityName').value.trim();
     if(!code || !name) return;
     if(board.cities.some(c=>c.code===code)) return;
     board.cities.push({code, name});
     await saveBoard(); render();
-  };
+  });
   el.querySelectorAll('[data-del-city]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       board.cities = board.cities.filter(c=>c.code!==btn.dataset.delCity);
       await saveBoard(); render();
-    };
+    });
   });
 
   const slaProjectPicker = document.getElementById('slaProjectPicker');
@@ -3231,7 +3389,7 @@ function renderAdmin(){
   const slaDetailsEl = document.querySelector('#adminSlaSection details');
   if(slaDetailsEl) slaDetailsEl.addEventListener('toggle', ()=>{ slaSectionOpen = slaDetailsEl.open; });
   const admSaveSlaBtn = document.getElementById('admSaveSla');
-  if(admSaveSlaBtn) admSaveSlaBtn.onclick = async ()=>{
+  if(admSaveSlaBtn) admSaveSlaBtn.onclick = withClickLoading(admSaveSlaBtn, 'Working…', async ()=>{
     if(!slaEditorSiteId) return;
     if(!board.tatOverrides[slaEditorSiteId]) board.tatOverrides[slaEditorSiteId] = {};
     const keys = new Set();
@@ -3247,17 +3405,18 @@ function renderAdmin(){
       }
     });
     await saveBoard(); render();
-  };
+  });
 
   el.querySelectorAll('[data-del-user]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const email = btn.dataset.delUser;
       board.users = board.users.filter(u=>u.email!==email);
       await saveBoard(); render();
-    };
+    });
   });
 
-  document.getElementById('admAddSite').onclick = async ()=>{
+  const _loadBtn_admAddSite = document.getElementById('admAddSite');
+  _loadBtn_admAddSite.onclick = withClickLoading(_loadBtn_admAddSite, 'Working…', async ()=>{
     const name = document.getElementById('admSiteName').value.trim();
     if(!name) return;
     const site = { id: uid('site'), name, city: document.getElementById('admSiteCity').value, format: document.getElementById('admSiteFormat').value, templateId: 'tmpl_nso', status: 'live', ownerId: null };
@@ -3267,9 +3426,9 @@ function renderAdmin(){
     await saveBoard();
     currentView = 'tracker';
     render();
-  };
+  });
   el.querySelectorAll('[data-del-site]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const id = btn.dataset.delSite;
       const site = board.sites.find(s=>s.id===id);
       if(!site) return;
@@ -3280,7 +3439,7 @@ function renderAdmin(){
       site.deletedBy = getWho();
       if(activeStore === id){ const vs = visibleSites(); activeStore = vs.length ? vs[0].id : null; }
       await saveBoard(); render();
-    };
+    });
   });
 
   const stakeholderSearchBox = document.getElementById('stakeholderSearchBox');
@@ -3303,7 +3462,8 @@ function renderAdmin(){
     };
   });
 
-  document.getElementById('admAddSh').onclick = async ()=>{
+  const _loadBtn_admAddSh = document.getElementById('admAddSh');
+  _loadBtn_admAddSh.onclick = withClickLoading(_loadBtn_admAddSh, 'Working…', async ()=>{
     const name = document.getElementById('admShName').value.trim();
     const email = document.getElementById('admShEmail').value.trim().toLowerCase();
     if(!name) return;
@@ -3319,7 +3479,7 @@ function renderAdmin(){
       isApprover: document.getElementById('admShApprover').checked };
     board.stakeholders.push(p);
     await saveBoard(); render();
-  };
+  });
 
   const downloadSampleStakeholders = document.getElementById('downloadSampleStakeholders');
   if(downloadSampleStakeholders) downloadSampleStakeholders.onclick = ()=>{
@@ -3329,7 +3489,7 @@ function renderAdmin(){
     ], 'sample-stakeholders.csv');
   };
   const admShBulkBtn = document.getElementById('admShBulkBtn');
-  if(admShBulkBtn) admShBulkBtn.onclick = async ()=>{
+  if(admShBulkBtn) admShBulkBtn.onclick = withClickLoading(admShBulkBtn, 'Working…', async ()=>{
     const file = document.getElementById('admShBulkFile').files[0];
     const statusEl = document.getElementById('admShBulkStatus');
     if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
@@ -3363,7 +3523,7 @@ function renderAdmin(){
     }catch(e){
       statusEl.textContent = 'Import failed: ' + e.message;
     }
-  };
+  });
 
   el.querySelectorAll('[data-resolve-reports]').forEach(sel=>{
     sel.onchange = async ()=>{
@@ -3376,14 +3536,14 @@ function renderAdmin(){
   });
 
   el.querySelectorAll('[data-del-sh]').forEach(btn=>{
-    btn.onclick = async ()=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const id = btn.dataset.delSh;
       board.stakeholders = board.stakeholders.filter(p=>p.id!==id);
       board.approvalPanel = board.approvalPanel.map(pid=>pid===id?'':pid);
       // clear anyone who reported to the removed person, so no dangling reference
       board.stakeholders.forEach(p=>{ if(p.reportsTo===id) p.reportsTo=null; });
       await saveBoard(); render();
-    };
+    });
   });
   el.querySelectorAll('[data-level-edit]').forEach(inp=>{
     inp.onchange = async ()=>{
@@ -3439,6 +3599,7 @@ function renderAdmin(){
 }
 
 document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; trackerSubView='list'; render(); };
+document.getElementById('navDashboard').onclick = ()=>{ currentView='dashboard'; render(); };
 document.getElementById('backToProjectListBtn').onclick = ()=>{ trackerSubView='list'; render(); };
 document.getElementById('navMyTasks').onclick = ()=>{ currentView='myTasks'; render(); };
 document.getElementById('navFiles').onclick = ()=>{ currentView='files'; render(); };
@@ -3512,6 +3673,42 @@ document.getElementById('forgotPasswordBtn').onclick = ()=>{
   showAuthStep('signupStep1');
 };
 
+// Makes a button's "in-flight" state actually visible — text changes, it visibly dims,
+// and the cursor shows not-allowed — instead of just a silent .disabled=true that looks
+// identical to a normal clickable button. This is what was inviting repeated clicks,
+// especially on the sign-in page where a stuck-looking button is the first thing anyone
+// sees.
+function setBtnLoading(btn, loadingText){
+  if(btn.dataset.origText === undefined) btn.dataset.origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = loadingText;
+  btn.style.opacity = '0.6';
+  btn.style.cursor = 'not-allowed';
+}
+function clearBtnLoading(btn){
+  if(btn.dataset.origText !== undefined) btn.textContent = btn.dataset.origText;
+  btn.disabled = false;
+  btn.style.opacity = '';
+  btn.style.cursor = '';
+}
+// Wraps an entire click handler so the visible loading state applies automatically,
+// without needing to touch each handler's internal logic — safe even for handlers that
+// already had their own disabled-toggling, since setting it twice is harmless. A repeat
+// click while already in flight is ignored outright rather than queuing a second call.
+// A function declaration (not a const arrow function) so it's hoisted — most of the 45
+// handlers using this sit earlier in the file than this definition.
+function withClickLoading(btn, loadingText, fn){
+  return async (...args) => {
+    if(btn.disabled) return;
+    setBtnLoading(btn, loadingText);
+    try{
+      await fn(...args);
+    } finally {
+      clearBtnLoading(btn);
+    }
+  };
+}
+
 // ---- Log in ----
 document.getElementById('loginBtn').onclick = async ()=>{
   hideMsg('loginMsg');
@@ -3519,15 +3716,16 @@ document.getElementById('loginBtn').onclick = async ()=>{
   const password = document.getElementById('loginPassword').value;
   if(!isValidEmail(email)){ showMsg('loginMsg', 'Enter a valid email address.'); return; }
   if(!password){ showMsg('loginMsg', 'Enter your password.'); return; }
+  const btn = document.getElementById('loginBtn');
   try{
-    document.getElementById('loginBtn').disabled = true;
+    setBtnLoading(btn, 'Signing in…');
     const res = await loginFn({ email, password });
     await auth.signInWithCustomToken(res.data.token);
     // onAuthStateChanged below picks it up from here
   }catch(e){
     showMsg('loginMsg', friendlyError(e, 'Sign-in failed. Please try again.'));
   }finally{
-    document.getElementById('loginBtn').disabled = false;
+    clearBtnLoading(btn);
   }
 };
 
@@ -3537,8 +3735,9 @@ document.getElementById('sendOtpBtn').onclick = async ()=>{
   hideMsg('signupStep1Msg');
   const email = document.getElementById('signupEmail').value.trim().toLowerCase();
   if(!isValidEmail(email)){ showMsg('signupStep1Msg', 'Enter a valid email address.'); return; }
+  const btn = document.getElementById('sendOtpBtn');
   try{
-    document.getElementById('sendOtpBtn').disabled = true;
+    setBtnLoading(btn, 'Sending…');
     const res = await sendOtpCodeFn({ email });
     if(authFlowMode === 'signup' && res.data.hasPassword){
       showMsgWithLink('signupStep1Msg', 'An account already exists for this email — ', 'click to log in', ' instead.', ()=>{
@@ -3564,7 +3763,7 @@ document.getElementById('sendOtpBtn').onclick = async ()=>{
   }catch(e){
     showMsg('signupStep1Msg', friendlyError(e, 'Could not send the code. Please try again.'));
   }finally{
-    document.getElementById('sendOtpBtn').disabled = false;
+    clearBtnLoading(btn);
   }
 };
 
@@ -3573,8 +3772,9 @@ document.getElementById('verifyOtpBtn').onclick = async ()=>{
   hideMsg('signupStep2Msg');
   const code = document.getElementById('otpInput').value.trim();
   if(!code){ showMsg('signupStep2Msg', 'Enter the 6-digit code.'); return; }
+  const btn = document.getElementById('verifyOtpBtn');
   try{
-    document.getElementById('verifyOtpBtn').disabled = true;
+    setBtnLoading(btn, 'Verifying…');
     await verifyOtpCodeFn({ email: signupEmail, code });
     document.getElementById('newPassword').value = '';
     document.getElementById('newPasswordConfirm').value = '';
@@ -3582,16 +3782,20 @@ document.getElementById('verifyOtpBtn').onclick = async ()=>{
   }catch(e){
     showMsg('signupStep2Msg', friendlyError(e, 'That code is incorrect.'));
   }finally{
-    document.getElementById('verifyOtpBtn').disabled = false;
+    clearBtnLoading(btn);
   }
 };
 document.getElementById('resendOtpBtn').onclick = async ()=>{
   hideMsg('signupStep2Msg');
+  const btn = document.getElementById('resendOtpBtn');
   try{
+    setBtnLoading(btn, 'Resending…');
     await sendOtpCodeFn({ email: signupEmail });
     showMsg('signupStep2Msg', 'Sent a new code.', '#2F7A4F');
   }catch(e){
     showMsg('signupStep2Msg', friendlyError(e, 'Could not resend the code.'));
+  }finally{
+    clearBtnLoading(btn);
   }
 };
 
@@ -3602,8 +3806,9 @@ document.getElementById('createAccountBtn').onclick = async ()=>{
   const confirm = document.getElementById('newPasswordConfirm').value;
   if(password.length < 8){ showMsg('signupStep3Msg', 'Password must be at least 8 characters.'); return; }
   if(password !== confirm){ showMsg('signupStep3Msg', 'Passwords do not match.'); return; }
+  const btn = document.getElementById('createAccountBtn');
   try{
-    document.getElementById('createAccountBtn').disabled = true;
+    setBtnLoading(btn, authFlowMode === 'reset' ? 'Resetting…' : 'Creating account…');
     const fn = authFlowMode === 'reset' ? resetPasswordFn : createAccountFn;
     const res = await fn({ email: signupEmail, password });
     await auth.signInWithCustomToken(res.data.token);
@@ -3611,7 +3816,7 @@ document.getElementById('createAccountBtn').onclick = async ()=>{
   }catch(e){
     showMsg('signupStep3Msg', friendlyError(e, 'Could not complete this. Please try again.'));
   }finally{
-    document.getElementById('createAccountBtn').disabled = false;
+    clearBtnLoading(btn);
   }
 };
 
@@ -3619,16 +3824,23 @@ document.getElementById('createAccountBtn').onclick = async ()=>{
 document.getElementById('saveNameBtn').onclick = async ()=>{
   const name = document.getElementById('loginName').value.trim();
   if(!name) return;
-  board.users.push({ email: pendingNewUserEmail, name, firstLoginAt: Date.now(), tutorialsSeen: [] });
-  await saveBoard();
-  currentUser = { email: pendingNewUserEmail, name };
-  pendingNewUserEmail = null;
-  document.getElementById('loginGate').style.display = 'none';
-  document.getElementById('whoDisplay').textContent = `Signed in as ${currentUser.name}`;
-  handleLanding();
+  const btn = document.getElementById('saveNameBtn');
+  try{
+    setBtnLoading(btn, 'Saving…');
+    board.users.push({ email: pendingNewUserEmail, name, firstLoginAt: Date.now(), tutorialsSeen: [] });
+    await saveBoard();
+    currentUser = { email: pendingNewUserEmail, name };
+    pendingNewUserEmail = null;
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('whoDisplay').textContent = `Signed in as ${currentUser.name}`;
+    handleLanding();
+  }finally{
+    clearBtnLoading(btn);
+  }
 };
 
-document.getElementById('switchUserBtn').onclick = async ()=>{
+const _loadBtn_switchUserBtn = document.getElementById('switchUserBtn');
+_loadBtn_switchUserBtn.onclick = withClickLoading(_loadBtn_switchUserBtn, 'Working…', async ()=>{
   await auth.signOut();
   if(unsubscribeBoard){ unsubscribeBoard(); unsubscribeBoard = null; }
   if(unsubscribeRoles){ unsubscribeRoles(); unsubscribeRoles = null; }
@@ -3647,7 +3859,7 @@ document.getElementById('switchUserBtn').onclick = async ()=>{
   hideMsg('loginMsg');
   showAuthStep('login');
   document.getElementById('loginGate').style.display = 'flex';
-};
+});
 
 let pendingScopedLanding = null; // { siteId, stageId } — set once a scoped assignment link redeems successfully
 let scopedLinkChecked = false;   // becomes true once the attempt (if any) finishes, success or fail
