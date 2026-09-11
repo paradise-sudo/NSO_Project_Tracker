@@ -510,6 +510,9 @@ const closeProjectFn = functionsClient.httpsCallable('closeProject');
 const saveStagePipelineFn = functionsClient.httpsCallable('saveStagePipeline');
 const setApproverEligibilityFn = functionsClient.httpsCallable('setApproverEligibility');
 const setApprovalPanelSeatFn = functionsClient.httpsCallable('setApprovalPanelSeat');
+const addStageApproverFn = functionsClient.httpsCallable('addStageApprover');
+const removeStageApproverFn = functionsClient.httpsCallable('removeStageApprover');
+const approveCommercialTermsLineFn = functionsClient.httpsCallable('approveCommercialTermsLine');
 const storage = firebase.storage();
 const BOARD_DOC = db.collection('nso').doc('board');
 let unsubscribeBoard = null;
@@ -540,28 +543,28 @@ let STAGES = [
   {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', tatMinDays:0, tatMaxDays:14,
    desc:'Physical scouting within identified markets.',
    warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
-  {id:12, num:'02a', title:'Commercial Terms', type:'commercial-terms', owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
+  {id:12, num:'03', title:'Commercial Terms', type:'commercial-terms', owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
    desc:'Commercial/lease terms negotiated and captured — rent, tenure, security deposit, lock-in, and related terms. Filled in by Business Development.'},
-  {id:3, num:'03', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5,
+  {id:3, num:'04', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5,
    desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
-  {id:4, num:'04', title:'Site Visit + Sign-Off', type:'approval', owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10,
+  {id:4, num:'05', title:'Site Visit + Sign-Off', type:'approval', owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10,
    desc:'All 5 panel members must physically visit the site. P&L reviewed on-site. No partial approvals — all 5 must sign off within the 10-day window.',
    reworkTo:2},
-  {id:5, num:'05', title:'Feasibility + Service Req + CAPEX', type:'task', owner:'Ayush + Renuka + Sandeep', duration:'1 Week', tatMinDays:0, tatMaxDays:7, parallelGroup:'g1',
+  {id:5, num:'06', title:'Feasibility + Service Req + CAPEX', type:'task', owner:'Ayush + Renuka + Sandeep', duration:'1 Week', tatMinDays:0, tatMaxDays:7, parallelGroup:'g1',
    desc:'Detailed feasibility study, service requirements mapped, final CAPEX estimated and approved. Runs in parallel with electrical load confirmation.'},
-  {id:6, num:'06', title:'Electrical Load Confirmation', type:'gate', owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', tatMinDays:0, tatMaxDays:14, bangaloreOnly:true, parallelGroup:'g1',
+  {id:6, num:'07', title:'Electrical Load Confirmation', type:'gate', owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', tatMinDays:0, tatMaxDays:14, bangaloreOnly:true, parallelGroup:'g1',
    desc:'Landlord must confirm electrical load in writing before the LOI can be signed.',
    warning:'HARD GATE — Bangalore specific. LOI cannot be signed until load is confirmed in writing. New buildings strictly avoided. No exceptions.',
    reworkTo:2},
-  {id:7, num:'07', title:'LOI Signing + Rent Structure', type:'task', owner:'Ayush + Finance', duration:'Post load confirm', tatMinDays:0, tatMaxDays:14,
+  {id:7, num:'08', title:'LOI Signing + Rent Structure', type:'task', owner:'Ayush + Finance', duration:'Post load confirm', tatMinDays:0, tatMaxDays:14,
    desc:'LOI / term sheet signed post load confirmation. Legal (Gunjan) initiates Agreement documentation in parallel — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution.'},
-  {id:8, num:'08', title:'Security Deposit', type:'task', owner:'Ayush + Finance', duration:'1 Day', tatMinDays:0, tatMaxDays:1,
+  {id:8, num:'09', title:'Security Deposit', type:'task', owner:'Ayush + Finance', duration:'1 Day', tatMinDays:0, tatMaxDays:1,
    desc:'Security deposit paid to landlord post LOI signing.'},
-  {id:9, num:'09', title:'Agreement Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'14 Days', tatMinDays:0, tatMaxDays:14,
+  {id:9, num:'10', title:'Agreement Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'14 Days', tatMinDays:0, tatMaxDays:14,
    desc:'Lease agreement executed — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution finalised.'},
-  {id:10, num:'10', title:'Registration Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'35 Days', tatMinDays:0, tatMaxDays:35,
+  {id:10, num:'11', title:'Registration Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'35 Days', tatMinDays:0, tatMaxDays:35,
    desc:'Lease agreement registered.'},
-  {id:11, num:'11', title:'Post-LOI Execution', type:'checklist', owner:'All Workstream Owners', duration:'~54 Days', tatMinDays:0, tatMaxDays:54,
+  {id:11, num:'12', title:'Post-LOI Execution', type:'checklist', owner:'All Workstream Owners', duration:'~54 Days', tatMinDays:0, tatMaxDays:54,
    desc:'Construction, hiring, licensing, equipment delivery, and design specs — running in parallel from Construction Start through Snags Sign-Off, per the NSO Projects 2026–27 tracker.'},
 ];
 
@@ -795,6 +798,7 @@ function makeSiteData(site){
     }
     if(st.type === 'commercial-terms'){
       stageData[st.id].commercialTerms = {}; // { fieldId: value } — keyed against board.commercialTermsFields, not this stage's id, so the field list can grow later without touching existing data
+      stageData[st.id].commercialTermsApprovals = {}; // { fieldId: {by, byId, at} } — per-line approval, separate from the value itself
     }
   });
   return { current: STAGES[0].id, stageData, log: [], signingDate: null, comments: [], emailThread: null, projectClosed: false, closedBy: null, closedAt: null,
@@ -865,13 +869,45 @@ function migrateStageStructure(){
   // pick it up without needing to recreate the board from scratch.
   if(!STAGES.find(st=>st.type==='commercial-terms')){
     const groundScoutingIdx = STAGES.findIndex(st=>st.id===2);
-    const newStage = {id:12, num:'02a', title:'Commercial Terms', type:'commercial-terms', owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
+    const newStage = {id:12, num:'00', title:'Commercial Terms', type:'commercial-terms', owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
       desc:'Commercial/lease terms negotiated and captured — rent, tenure, security deposit, lock-in, and related terms. Filled in by Business Development.'};
     if(groundScoutingIdx === -1) STAGES.push(newStage);
     else STAGES.splice(groundScoutingIdx+1, 0, newStage);
+    // Renumber everything right away, same formula as renumberAndSave — numbering has
+    // always started at 02 (Stage 1 was removed early on), and inserting a stage here
+    // shifts every stage after it by one. Doing this now means the very first render
+    // after this migration already shows correct numbers, not just after the next
+    // manual Stage Editor edit.
+    STAGES.forEach((st,i)=>{ st.num = String(i+2).padStart(2,'0'); });
     changed = true;
   }
   if(!board.commercialTermsFields){ board.commercialTermsFields = defaultCommercialTermsFields(); changed = true; }
+  // Approvers move from one fixed global 5-person panel to a variable-length list per
+  // approval-capable stage — preserves the existing Site Visit + Sign-Off panel by
+  // migrating it into stageApprovers[4] rather than losing who was already set up there.
+  if(!board.stageApprovers){
+    board.stageApprovers = {};
+    if(board.approvalPanel){ board.stageApprovers[4] = board.approvalPanel.filter(Boolean); }
+    changed = true;
+  }
+  STAGES.forEach(st=>{
+    if((st.type==='approval' || st.type==='commercial-terms') && !board.stageApprovers[st.id]){
+      board.stageApprovers[st.id] = [];
+      changed = true;
+    }
+  });
+  // Separate from the insertion above — catches boards that already have the Commercial
+  // Terms stage but picked up wrong numbers from an earlier bug (renumberAndSave used to
+  // start at 01 instead of 02, silently overwriting the intended numbering on any Stage
+  // Editor edit). Runs every load; cheap, and a no-op once numbers are already correct.
+  {
+    let numsWrong = false;
+    STAGES.forEach((st,i)=>{ if(st.num !== String(i+2).padStart(2,'0')) numsWrong = true; });
+    if(numsWrong){
+      STAGES.forEach((st,i)=>{ st.num = String(i+2).padStart(2,'0'); });
+      changed = true;
+    }
+  }
   // Migrate each stage's old single slaDays into the new {tatMinDays, tatMaxDays} range —
   // old value becomes the max, min defaults to 0, so nothing's overdue status changes.
   STAGES.forEach(st=>{
@@ -933,6 +969,11 @@ function migrateStageStructure(){
       }
       if(st.type === 'commercial-terms' && !s.stageData[st.id].commercialTerms){
         s.stageData[st.id].commercialTerms = {};
+        s.stageData[st.id].commercialTermsApprovals = {};
+        changed = true;
+      }
+      if(st.type === 'commercial-terms' && s.stageData[st.id].commercialTerms && !s.stageData[st.id].commercialTermsApprovals){
+        s.stageData[st.id].commercialTermsApprovals = {};
         changed = true;
       }
     });
@@ -1948,7 +1989,13 @@ function renderTemplatesView(){
   wireAccordionPersistence(el);
 
   const renumberAndSave = async ()=>{
-    STAGES.forEach((st,i)=>{ st.num = String(i+1).padStart(2,'0'); });
+    // Numbering has always started at 02, not 01 — Stage 1 (Market & Area Identification)
+    // was removed early in this pipeline's history, and Ground Scouting kept "02" for
+    // continuity rather than sliding back to "01". This must survive every future edit,
+    // not just the seed data — otherwise the very next Stage Editor change (even an
+    // unrelated one, like a TAT tweak) silently renumbers everything back to 01, 02, 03…
+    // which is exactly what happened to Commercial Terms' "02a" label.
+    STAGES.forEach((st,i)=>{ st.num = String(i+2).padStart(2,'0'); });
     try{
       await saveStagePipelineFn({ stages: STAGES });
     }catch(e){ window.alert(e.message || 'Could not save pipeline changes — try again.'); }
@@ -2650,10 +2697,10 @@ function openSheet(stageId){
 
   if(st.type === 'approval'){
     d.approvals = d.approvals || {};
-    const panel = board.approvalPanel.map(id=>board.stakeholders.find(x=>x.id===id)).filter(Boolean);
+    const panel = ((board.stageApprovers && board.stageApprovers[st.id]) || []).map(id=>board.stakeholders.find(x=>x.id===id)).filter(Boolean);
     const approvedCount = panel.filter(p=>d.approvals[p.id]).length;
-    if(panel.length < 5){
-      inner += `<div class="warn">⚠ Only ${panel.length}/5 seats filled on the approval panel. Assign all 5 in Admin.</div>`;
+    if(panel.length === 0){
+      inner += `<div class="warn">⚠ No approvers configured for this stage yet. Add them in Admin → Approvers.</div>`;
     }
     inner += `<div class="approver-list">` + panel.map(p=>{
       const rec = d.approvals[p.id];
@@ -2856,25 +2903,36 @@ function openSheet(stageId){
     }
   } else if(st.type === 'commercial-terms'){
     d.commercialTerms = d.commercialTerms || {};
+    d.commercialTermsApprovals = d.commercialTermsApprovals || {};
     const fields = board.commercialTermsFields || [];
-    inner += `<details class="collapse-group" open><summary>Commercial Terms (${fields.length} fields)</summary>`;
+    const ctApprovers = (board.stageApprovers && board.stageApprovers[st.id]) || [];
+    const iAmCtApprover = myId && ctApprovers.includes(myId);
+    const approvedCount = fields.filter(f=>d.commercialTermsApprovals[f.id]).length;
+    if(ctApprovers.length === 0){
+      inner += `<div class="warn">⚠ No approvers configured for this stage yet. Add them in Admin → Approvers.</div>`;
+    }
+    inner += `<details class="collapse-group" open><summary>Commercial Terms (${fields.length} fields) <span style="font-weight:400;color:var(--sub);font-size:11px;">${approvedCount}/${fields.length} approved</span></summary>`;
     fields.forEach(f=>{
       const val = d.commercialTerms[f.id] || '';
+      const rec = d.commercialTermsApprovals[f.id];
+      const canToggle = iAmCtApprover && (!rec || rec.byId === myId); // any approver can approve; only that same approver can undo it
+      inner += `<div class="field" style="border:1px solid ${rec?'var(--green,#2F7A4F)':'var(--line)'};border-radius:8px;padding:10px;margin-bottom:8px;">
+        <label>${escapeHtml(f.label)}</label>`;
       if(f.type === 'textarea'){
-        inner += `<div class="field"><label>${escapeHtml(f.label)}</label><textarea data-ct-field="${f.id}">${escapeHtml(val)}</textarea></div>`;
+        inner += `<textarea data-ct-field="${f.id}">${escapeHtml(val)}</textarea>`;
       } else {
-        inner += `<div class="field"><label>${escapeHtml(f.label)}</label><input data-ct-field="${f.id}" type="${f.type==='number'?'number':'text'}" value="${escapeHtml(val)}"></div>`;
+        inner += `<input data-ct-field="${f.id}" type="${f.type==='number'?'number':'text'}" value="${escapeHtml(val)}">`;
       }
+      inner += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+        <span style="font-size:11px;color:var(--sub);">${rec ? `✓ Approved by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}` : 'Not yet approved'}</span>
+        ${canToggle ? `<button class="btn ghost" data-ct-approve="${f.id}" style="width:auto;font-size:11px;padding:5px 10px;">${rec?'Undo':'Approve'}</button>` : ''}
+      </div></div>`;
     });
     inner += `</details>`;
     inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
     inner += `<div class="btn-row"><button class="btn ghost" id="saveCommercialTermsBtn">Save terms</button></div>`;
-    if(d.status !== 'done'){
-      inner += `<div class="btn-row">
-        <button class="btn ghost" id="saveNotesBtn">Save notes</button>
-        <button class="btn primary" id="completeBtn">Mark complete</button>
-      </div>`;
-    }else{
+    inner += `<div class="btn-row"><button class="btn ghost" id="saveNotesBtn">Save notes</button></div>`;
+    if(d.status === 'done'){
       inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
     }
   } else {
@@ -3173,6 +3231,16 @@ function wireSheetActions(st, s, d){
     await saveBoard(); render(); openSheet(st.id);
   });
 
+  document.querySelectorAll('[data-ct-approve]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      try{
+        const res = await approveCommercialTermsLineFn({ siteId: activeStore, stageId: st.id, fieldId: btn.dataset.ctApprove });
+        if(res && res.data){ d.commercialTermsApprovals = res.data.commercialTermsApprovals; d.status = res.data.status; }
+        render(); openSheet(st.id);
+      }catch(e){ window.alert(e.message || 'Could not update that approval — try again.'); }
+    });
+  });
+
   document.querySelectorAll('[data-clear-target]').forEach(btn=>{
     btn.onclick = ()=>{
       const input = document.getElementById(btn.dataset.clearTarget);
@@ -3313,7 +3381,7 @@ function renderAdmin(){
 
     <div class="admin-section">
       <h3>Sites</h3>
-      <div class="sub">Adding a site here starts its NSO tracker from Stage 01.</div>
+      <div class="sub">Adding a site here starts its NSO tracker from Stage 02.</div>
       <div class="field"><label>Site name</label><input id="admSiteName" placeholder="e.g. Bangalore — Site 5"></div>
       <div class="field"><label>City</label><select id="admSiteCity">${board.cities.map(c=>`<option value="${c.code}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
       <div class="field"><label>Format</label><select id="admSiteFormat">
@@ -3331,7 +3399,7 @@ function renderAdmin(){
 
     <div class="admin-section" id="adminStakeholdersSection">
       <h3>Stakeholders</h3>
-      <div class="sub">Level is a reference label. Tag someone as an Approver to make them eligible for the 5-way panel below. Email is required — project updates for this person's sites push to it automatically. "Reports to" is used when someone flags a blocker — their manager gets notified too.</div>
+      <div class="sub">Level is a reference label. Tag someone as an Approver to make them eligible for the approver lists below (per stage, in the Approvers section). Email is required — project updates for this person's sites push to it automatically. "Reports to" is used when someone flags a blocker — their manager gets notified too.</div>
       <div class="field"><label>Name</label><input id="admShName" placeholder="e.g. Priya Nair"></div>
       <div class="field"><label>Email</label><input id="admShEmail" type="email" placeholder="priya@paradisefoodcourt.in"></div>
       <div class="field"><label>Department</label><input id="admShDept" placeholder="e.g. Finance"></div>
@@ -3408,16 +3476,20 @@ function renderAdmin(){
     </div>` : ''}
 
     <div class="admin-section">
-      <h3>5-Way Approval Panel</h3>
-      <div class="sub">Stage 04 sign-off. Only stakeholders tagged as Approver above are eligible.</div>
-      ${[0,1,2,3,4].map(i=>{
+      <h3>Approvers</h3>
+      <div class="sub">Each approval-capable stage has its own list. Only stakeholders tagged Approver above are eligible. A stage needs every one of its listed approvers to sign off (or, for Commercial Terms, any one of them per line).</div>
+      ${STAGES.filter(st=>st.type==='approval' || st.type==='commercial-terms').map(st=>{
         const eligible = board.stakeholders.filter(p=>p.isApprover);
-        const currentId = board.approvalPanel[i] || '';
-        return `<div class="approver-slot-row">
-          <label>Seat ${i+1}</label>
-          <select data-slot="${i}">
-            <option value="">— unassigned —</option>
-            ${eligible.map(p=>`<option value="${p.id}" ${p.id===currentId?'selected':''}>${escapeHtml(p.name)} (${levelLabel(p.level)})</option>`).join('')}
+        const current = (board.stageApprovers && board.stageApprovers[st.id]) || [];
+        const currentPeople = current.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
+        return `<div style="margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">${st.num} · ${escapeHtml(st.title)}</div>
+          ${currentPeople.length === 0 ? `<div class="admin-row-sub" style="padding:4px 0;">No approvers yet.</div>` : currentPeople.map(p=>`
+            <div class="admin-row"><div class="admin-row-main">${escapeHtml(p.name)}</div><button class="remove-x" data-remove-stage-approver="${st.id}|${p.id}">✕</button></div>
+          `).join('')}
+          <select data-add-stage-approver="${st.id}" style="margin-top:6px;">
+            <option value="">— add an approver —</option>
+            ${eligible.filter(p=>!current.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${levelLabel(p.level)})</option>`).join('')}
           </select>
         </div>`;
       }).join('')}
@@ -3721,7 +3793,11 @@ function renderAdmin(){
     btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
       const id = btn.dataset.delSh;
       board.stakeholders = board.stakeholders.filter(p=>p.id!==id);
-      board.approvalPanel = board.approvalPanel.map(pid=>pid===id?'':pid);
+      if(board.stageApprovers){
+        Object.keys(board.stageApprovers).forEach(stageId=>{
+          board.stageApprovers[stageId] = board.stageApprovers[stageId].filter(pid=>pid!==id);
+        });
+      }
       // clear anyone who reported to the removed person, so no dangling reference
       board.stakeholders.forEach(p=>{ if(p.reportsTo===id) p.reportsTo=null; });
       await saveBoard(); render();
@@ -3761,22 +3837,39 @@ function renderAdmin(){
         const res = await setApproverEligibilityFn({ personId: p.id, isApprover: chk.checked });
         if(res && res.data){
           p.isApprover = res.data.isApprover;
-          if(!res.data.isApprover) board.approvalPanel = board.approvalPanel.map(pid=>pid===p.id?'':pid);
+          if(!res.data.isApprover && board.stageApprovers){
+            Object.keys(board.stageApprovers).forEach(stageId=>{
+              board.stageApprovers[stageId] = board.stageApprovers[stageId].filter(pid=>pid!==p.id);
+            });
+          }
         }
         render();
       }catch(e){ window.alert(e.message || 'Could not update Approver status — try again.'); render(); }
     };
   });
 
-  el.querySelectorAll('[data-slot]').forEach(sel=>{
+  el.querySelectorAll('[data-add-stage-approver]').forEach(sel=>{
     sel.onchange = async ()=>{
-      const i = parseInt(sel.dataset.slot);
+      const stageId = parseInt(sel.dataset.addStageApprover);
+      const personId = sel.value;
+      if(!personId) return;
       try{
-        const res = await setApprovalPanelSeatFn({ slot: i, personId: sel.value });
-        if(res && res.data) board.approvalPanel[i] = res.data.personId;
+        const res = await addStageApproverFn({ stageId, personId });
+        if(res && res.data) board.stageApprovers[stageId] = res.data.approvers;
         render();
-      }catch(e){ window.alert(e.message || 'Could not update that seat — try again.'); render(); }
+      }catch(e){ window.alert(e.message || 'Could not add that approver — try again.'); render(); }
     };
+  });
+  el.querySelectorAll('[data-remove-stage-approver]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const [stageIdStr, personId] = btn.dataset.removeStageApprover.split('|');
+      const stageId = parseInt(stageIdStr);
+      try{
+        const res = await removeStageApproverFn({ stageId, personId });
+        if(res && res.data) board.stageApprovers[stageId] = res.data.approvers;
+        render();
+      }catch(e){ window.alert(e.message || 'Could not remove that approver — try again.'); }
+    });
   });
 }
 
