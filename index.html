@@ -417,6 +417,7 @@
     </div>
     <div class="nav-tabs">
       <button class="nav-tab" id="navTracker"><span class="nav-tab-short">T</span><span class="nav-tab-label">Tracker</span></button>
+      <button class="nav-tab" id="navExecution"><span class="nav-tab-short">E</span><span class="nav-tab-label">Execution</span></button>
       <button class="nav-tab" id="navDashboard"><span class="nav-tab-short">D</span><span class="nav-tab-label">Dashboard</span></button>
       <button class="nav-tab" id="navMyTasks"><span class="nav-tab-short">M</span><span class="nav-tab-label">My Tasks</span></button>
       <button class="nav-tab" id="navFiles"><span class="nav-tab-short">F</span><span class="nav-tab-label">Files</span></button>
@@ -503,6 +504,7 @@ const removeAdminFn = functionsClient.httpsCallable('removeAdmin');
 const addDeveloperFn = functionsClient.httpsCallable('addDeveloper');
 const removeDeveloperFn = functionsClient.httpsCallable('removeDeveloper');
 const toggleApprovalFn = functionsClient.httpsCallable('toggleApproval');
+const markGroundWorkCompleteFn = functionsClient.httpsCallable('markGroundWorkComplete');
 const finalizeCapexFn = functionsClient.httpsCallable('finalizeCapex');
 const setCapexActualFn = functionsClient.httpsCallable('setCapexActual');
 const bulkSetCapexActualsFn = functionsClient.httpsCallable('bulkSetCapexActuals');
@@ -512,6 +514,10 @@ const setApproverEligibilityFn = functionsClient.httpsCallable('setApproverEligi
 const setApprovalPanelSeatFn = functionsClient.httpsCallable('setApprovalPanelSeat');
 const addStageApproverFn = functionsClient.httpsCallable('addStageApprover');
 const removeStageApproverFn = functionsClient.httpsCallable('removeStageApprover');
+const addDropApproverFn = functionsClient.httpsCallable('addDropApprover');
+const removeDropApproverFn = functionsClient.httpsCallable('removeDropApprover');
+const requestDropProjectFn = functionsClient.httpsCallable('requestDropProject');
+const respondToDropRequestFn = functionsClient.httpsCallable('respondToDropRequest');
 const approveCommercialTermsLineFn = functionsClient.httpsCallable('approveCommercialTermsLine');
 const storage = firebase.storage();
 const BOARD_DOC = db.collection('nso').doc('board');
@@ -540,31 +546,31 @@ const STAGE4_REQUIRED_LEVEL = 4; // kept for reference/labeling only — panel e
 // function reads this variable by name at call time (not a snapshot), reassigning it here
 // is enough to make the whole app stage-editable without touching every call site.
 let STAGES = [
-  {id:2, num:'02', title:'Ground Scouting', type:'task', owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', tatMinDays:0, tatMaxDays:14,
+  {id:2, num:'02', title:'Ground Scouting', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', tatMinDays:0, tatMaxDays:14,
    desc:'Physical scouting within identified markets.',
    warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
-  {id:12, num:'03', title:'Commercial Terms', type:'commercial-terms', owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
+  {id:12, num:'03', title:'Commercial Terms', type:'commercial-terms', requiresAssignment:false, requiresApproval:false, owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
    desc:'Commercial/lease terms negotiated and captured — rent, tenure, security deposit, lock-in, and related terms. Filled in by Business Development.'},
-  {id:3, num:'04', title:'P&L Model — Site Specific', type:'task', owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5,
+  {id:3, num:'04', title:'P&L Model — Site Specific', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5,
    desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
-  {id:4, num:'05', title:'Site Visit + Sign-Off', type:'approval', owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10,
+  {id:4, num:'05', title:'Site Visit + Sign-Off', type:'approval', requiresAssignment:false, requiresApproval:true, owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10,
    desc:'All 5 panel members must physically visit the site. P&L reviewed on-site. No partial approvals — all 5 must sign off within the 10-day window.',
    reworkTo:2},
-  {id:5, num:'06', title:'Feasibility + Service Req + CAPEX', type:'task', owner:'Ayush + Renuka + Sandeep', duration:'1 Week', tatMinDays:0, tatMaxDays:7, parallelGroup:'g1',
+  {id:5, num:'06', title:'Feasibility + Service Req + CAPEX', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Renuka + Sandeep', duration:'1 Week', tatMinDays:0, tatMaxDays:7, parallelGroup:'g1',
    desc:'Detailed feasibility study, service requirements mapped, final CAPEX estimated and approved. Runs in parallel with electrical load confirmation.'},
-  {id:6, num:'07', title:'Electrical Load Confirmation', type:'gate', owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', tatMinDays:0, tatMaxDays:14, bangaloreOnly:true, parallelGroup:'g1',
+  {id:6, num:'07', title:'Electrical Load Confirmation', type:'gate', requiresAssignment:true, requiresApproval:false, owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', tatMinDays:0, tatMaxDays:14, bangaloreOnly:true, parallelGroup:'g1',
    desc:'Landlord must confirm electrical load in writing before the LOI can be signed.',
    warning:'HARD GATE — Bangalore specific. LOI cannot be signed until load is confirmed in writing. New buildings strictly avoided. No exceptions.',
    reworkTo:2},
-  {id:7, num:'08', title:'LOI Signing + Rent Structure', type:'task', owner:'Ayush + Finance', duration:'Post load confirm', tatMinDays:0, tatMaxDays:14,
+  {id:7, num:'08', title:'LOI Signing + Rent Structure', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Finance', duration:'Post load confirm', tatMinDays:0, tatMaxDays:14,
    desc:'LOI / term sheet signed post load confirmation. Legal (Gunjan) initiates Agreement documentation in parallel — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution.'},
-  {id:8, num:'09', title:'Security Deposit', type:'task', owner:'Ayush + Finance', duration:'1 Day', tatMinDays:0, tatMaxDays:1,
+  {id:8, num:'09', title:'Security Deposit', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Finance', duration:'1 Day', tatMinDays:0, tatMaxDays:1,
    desc:'Security deposit paid to landlord post LOI signing.'},
-  {id:9, num:'10', title:'Agreement Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'14 Days', tatMinDays:0, tatMaxDays:14,
+  {id:9, num:'10', title:'Agreement Date', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Legal (Gunjan)', duration:'14 Days', tatMinDays:0, tatMaxDays:14,
    desc:'Lease agreement executed — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution finalised.'},
-  {id:10, num:'11', title:'Registration Date', type:'task', owner:'Ayush + Legal (Gunjan)', duration:'35 Days', tatMinDays:0, tatMaxDays:35,
+  {id:10, num:'11', title:'Registration Date', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Legal (Gunjan)', duration:'35 Days', tatMinDays:0, tatMaxDays:35,
    desc:'Lease agreement registered.'},
-  {id:11, num:'12', title:'Post-LOI Execution', type:'checklist', owner:'All Workstream Owners', duration:'~54 Days', tatMinDays:0, tatMaxDays:54,
+  {id:11, num:'12', title:'Post-LOI Execution', type:'checklist', requiresAssignment:false, requiresApproval:false, owner:'All Workstream Owners', duration:'~54 Days', tatMinDays:0, tatMaxDays:54,
    desc:'Construction, hiring, licensing, equipment delivery, and design specs — running in parallel from Construction Start through Snags Sign-Off, per the NSO Projects 2026–27 tracker.'},
 ];
 
@@ -629,6 +635,7 @@ let board = null;
 let activeStore = null;
 let currentView = 'tracker';
 let trackerSubView = 'list'; // 'list' (all projects) | 'detail' (one project's stages) — Tracker always lands on the list first
+let activePage = 'project-flow'; // 'project-flow' | 'execution' — which half of the ONE stage sequence is currently displayed; purely a display filter, not a separate progression
 let stageViewMode = 'vertical'; // 'vertical' | 'horizontal' — user's own choice, remembered per device
 let slaEditorSiteId = null; // which project's TAT overrides are currently shown in Admin's TAT Settings
 let slaSectionOpen = false; // keeps the TAT Settings accordion open across re-renders once the user opens it
@@ -740,7 +747,20 @@ function defaultBoard(){
     templates: seedTemplates,
     tatOverrides: {}, // board.tatOverrides[siteId]['stage_<id>' | 'task_<key>'] = {min, max} — per-project TAT overrides
     commercialTermsFields: defaultCommercialTermsFields(),
+    restaurantCostHeaders: defaultRestaurantCostHeaders(),
+    dropApprovers: [],
   };
+}
+
+// Universal list of restaurant cost line labels — shared across every project, same
+// pattern as Commercial Terms' field list. Each project stores its OWN amount against
+// each header (in d.financials.costLines), but the set of possible headers is one
+// shared list so a header added on one project's P&L is available on every other one
+// too, rather than every project inventing its own private cost breakdown.
+function defaultRestaurantCostHeaders(){
+  return [
+    {id:'fixedOpex', label:'Fixed Monthly Opex — Rent, Staff, Utilities'},
+  ];
 }
 
 // The editable field list for the Commercial Terms stage — addable/editable later via
@@ -788,7 +808,7 @@ function makeSiteData(site){
     stageData[st.id] = { status: skip ? 'skip' : (st.id===STAGES[0].id ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
       startedAt: (st.id===STAGES[0].id && !skip && site.status !== 'draft') ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
     if(st.id === 3){
-      stageData[st.id].financials = { capex:'', dineInSteady:'', deliverySteady:'', dineInRamp:{}, deliveryRamp:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+      stageData[st.id].financials = { capex:'', dineInSteady:'', deliverySteady:'', dineInRamp:{}, deliveryRamp:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'', costLines:{} };
     }
     if(st.id === 11){
       stageData[st.id].tasks = {};       // { key: {done, actualDate, tentativeStart, tentativeEnd, assignedTo, updatedBy, updatedAt} }
@@ -882,6 +902,47 @@ function migrateStageStructure(){
     changed = true;
   }
   if(!board.commercialTermsFields){ board.commercialTermsFields = defaultCommercialTermsFields(); changed = true; }
+  if(!board.restaurantCostHeaders){ board.restaurantCostHeaders = defaultRestaurantCostHeaders(); changed = true; }
+  if(!board.dropApprovers){ board.dropApprovers = []; changed = true; }
+  // Migrate each project's single fixedOpex number into the new itemized costLines
+  // shape, under the SAME header id ('fixedOpex') the default list starts with — so
+  // existing payback/ROI numbers don't change the moment this loads, just the storage
+  // shape does.
+  if(board.sites){
+    board.sites.forEach(site=>{
+      const s = board.siteData[site.id];
+      const f = s && s.stageData && s.stageData[3] && s.stageData[3].financials;
+      if(f && f.costLines === undefined){
+        f.costLines = {};
+        if(f.fixedOpex !== undefined && f.fixedOpex !== ''){ f.costLines.fixedOpex = f.fixedOpex; }
+        changed = true;
+      }
+    });
+  }
+  // Universal Assignment/Approval toggle migration — backward-compatible defaults based
+  // on each stage's CURRENT type, so every existing stage keeps behaving exactly as it
+  // already does. type:'approval' migrates onto the same generic requiresApproval flag
+  // Site Visit + Sign-Off already uses under the hood (its own board.stageApprovers list
+  // and toggleApproval mechanism are untouched — this just stops gating them on a
+  // hardcoded type string). Commercial Terms and the Post-LOI checklist keep their own
+  // fully separate mechanisms; both flags stay false there deliberately.
+  STAGES.forEach(st=>{
+    if(st.requiresAssignment === undefined || st.requiresApproval === undefined){
+      if(st.type === 'commercial-terms' || st.type === 'checklist'){
+        st.requiresAssignment = false; st.requiresApproval = false;
+      } else if(st.type === 'approval'){
+        st.requiresAssignment = false; st.requiresApproval = true;
+      } else { // task, gate, or anything else — matches current assign-and-complete behavior
+        st.requiresAssignment = true; st.requiresApproval = false;
+      }
+      changed = true;
+    }
+    // Execution page classification — every existing stage is Project Flow by default,
+    // so nothing currently in the pipeline moves to the new Execution tab on its own.
+    // This is purely a display grouping — recompute(), TAT, due dates, and overdue
+    // detection all still walk the full STAGES array unchanged, exactly one sequence.
+    if(!st.page){ st.page = 'project-flow'; changed = true; }
+  });
   // Approvers move from one fixed global 5-person panel to a variable-length list per
   // approval-capable stage — preserves the existing Site Visit + Sign-Off panel by
   // migrating it into stageApprovers[4] rather than losing who was already set up there.
@@ -891,7 +952,7 @@ function migrateStageStructure(){
     changed = true;
   }
   STAGES.forEach(st=>{
-    if((st.type==='approval' || st.type==='commercial-terms') && !board.stageApprovers[st.id]){
+    if((st.requiresApproval || st.type==='commercial-terms') && !board.stageApprovers[st.id]){
       board.stageApprovers[st.id] = [];
       changed = true;
     }
@@ -1092,7 +1153,10 @@ function effectiveRampPct(rampObj, m){
 function calcProjection(f){
   const capex = parseFloat(f.capex) || 0;
   const cogsPct = parseFloat(f.cogsPct) || 0;
-  const fixedOpex = parseFloat(f.fixedOpex) || 0;
+  // Fixed opex is now the sum of however many restaurant cost lines this project has —
+  // one number used to be typed directly here; now it's whatever the itemized list adds
+  // up to, so the payback/ROI math stays correct however many lines exist.
+  const fixedOpex = Object.values(f.costLines || {}).reduce((sum,v)=>sum+(parseFloat(v)||0), 0);
   const dineInSteady = parseFloat(f.dineInSteady) || 0;
   const deliverySteady = parseFloat(f.deliverySteady) || 0;
   const dineInRamp = f.dineInRamp || {};
@@ -1200,6 +1264,16 @@ function recalculateDueDates(id){
 // Falls back to the built-in default (from STAGES / STAGE11_TASKS) when no override is set.
 // Scoped per individual project, not shared globally — board.tatOverrides is
 // { siteId: { 'stage_<id>': {min,max}, 'task_<key>': {min,max} } }.
+// Single formatter for every TAT range shown anywhere in the app — always computed
+// live from the actual min/max, never from a stored text snapshot that can drift out of
+// sync once someone changes the real numbers via Stage Editor. Collapses to one number
+// only when min and max are genuinely equal, per spec.
+function fmtTatRange(min, max){
+  min = min || 0;
+  if(max === undefined || max === null) return `${min} Days`;
+  return min === max ? `${max} Days` : `${min}–${max} Days`;
+}
+
 function effectiveTat(siteId, key, defaultMin, defaultMax){
   if(board && board.tatOverrides && board.tatOverrides[siteId] && board.tatOverrides[siteId][key]){
     const ov = board.tatOverrides[siteId][key];
@@ -1210,11 +1284,41 @@ function effectiveTat(siteId, key, defaultMin, defaultMax){
 }
 
 function stageTiming(st, d, siteId){
+  const site = getSite(siteId);
+  if(site && site.status === 'dropped') return null; // dropped projects never show as overdue
   if(!d.startedAt || d.status==='done' || d.status==='skip') return null;
   const elapsedDays = Math.floor((Date.now() - d.startedAt) / 86400000);
   const tat = effectiveTat(siteId, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays);
   const overdueDays = elapsedDays - tat.max;
   return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, tatMin: tat.min, tatMax: tat.max };
+}
+
+function siteHasOverdueStages(site, s){
+  return STAGES.some(st=>{
+    const d = s.stageData[st.id];
+    if(!d) return false;
+    const t = stageTiming(st, d, site.id);
+    if(t && t.isOverdue) return true;
+    return !t && d.dueDate && Date.now() > d.dueDate && d.status !== 'done' && d.status !== 'skip';
+  });
+}
+
+// Single source of truth for a project's overall health status — used everywhere a
+// project's status is shown (store tabs, project header, Dashboard) so the same project
+// never shows conflicting colors in two different places. Priority matches the spec
+// exactly: Dropped beats everything, Completed beats Delayed, Delayed beats In Progress.
+function getProjectStatus(site, s){
+  if(site.status === 'dropped'){
+    return { status:'dropped', label:'Dropped', bg:'#E2E0D9', ink:'#5F5E5A' };
+  }
+  const doneFinal = s.stageData[11] && s.stageData[11].status === 'done';
+  if(doneFinal){
+    return { status:'completed', label:'Completed', bg:'#DCE9DC', ink:'#2F7A4F' };
+  }
+  if(siteHasOverdueStages(site, s)){
+    return { status:'delayed', label:'Delayed', bg:'#F3DCD8', ink:'#8A2E2E' };
+  }
+  return { status:'in-progress', label:'In Progress', bg:'#F5E6C8', ink:'#8A5A12' };
 }
 
 // Same idea as stageTiming, but for an individual checklist item within Stage 11 —
@@ -1246,7 +1350,8 @@ function render(){
 
   document.getElementById('navAdmin').style.display = isAdmin() ? '' : 'none';
   document.getElementById('navMyTasks').style.display = findMyStakeholder() ? '' : 'none';
-  document.getElementById('navTracker').classList.toggle('active', currentView==='tracker');
+  document.getElementById('navTracker').classList.toggle('active', currentView==='tracker' && activePage==='project-flow');
+  document.getElementById('navExecution').classList.toggle('active', currentView==='tracker' && activePage==='execution');
   document.getElementById('navDashboard').classList.toggle('active', currentView==='dashboard');
   document.getElementById('navMyTasks').classList.toggle('active', currentView==='myTasks');
   document.getElementById('navFiles').classList.toggle('active', currentView==='files');
@@ -1921,12 +2026,22 @@ function renderTemplatesView(){
             <option value="checklist" ${st.type==='checklist'?'selected':''}>Checklist</option>
             <option value="commercial-terms" ${st.type==='commercial-terms'?'selected':''}>Commercial Terms</option>
           </select>
+          <select data-stage-edit-page="${st.id}" style="width:auto;font-size:11px;">
+            <option value="project-flow" ${(st.page||'project-flow')==='project-flow'?'selected':''}>Project Flow</option>
+            <option value="execution" ${st.page==='execution'?'selected':''}>Execution</option>
+          </select>
           <input data-stage-edit-owner="${st.id}" value="${escapeHtml(st.owner||'')}" placeholder="Owner" style="flex:1;min-width:140px;font-size:11.5px;">
           <input data-stage-edit-tatmin="${st.id}" type="number" value="${st.tatMinDays !== undefined ? st.tatMinDays : ''}" placeholder="TAT min" style="width:75px;font-size:11.5px;">
           <input data-stage-edit-tatmax="${st.id}" type="number" value="${st.tatMaxDays !== undefined ? st.tatMaxDays : ''}" placeholder="TAT max" style="width:75px;font-size:11.5px;">
           <input data-stage-edit-parallel="${st.id}" value="${escapeHtml(st.parallelGroup||'')}" placeholder="Parallel group (blank = none)" style="width:150px;font-size:11.5px;">
           <textarea data-stage-edit-desc="${st.id}" placeholder="Description" style="flex:1 1 100%;font-size:11.5px;min-height:44px;margin-top:6px;">${escapeHtml(st.desc||'')}</textarea>
-          <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex:1 1 100%;">
+          <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex:1 1 100%;flex-wrap:wrap;">
+            <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" data-stage-edit-reqassign="${st.id}" ${st.requiresAssignment?'checked':''} style="width:auto;"> Requires assignment
+            </label>
+            <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" data-stage-edit-reqapproval="${st.id}" ${st.requiresApproval?'checked':''} style="width:auto;"> Requires approval
+            </label>
             <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
               <input type="checkbox" data-stage-edit-blroly="${st.id}" ${st.bangaloreOnly?'checked':''} style="width:auto;"> Bangalore only
             </label>
@@ -1942,6 +2057,10 @@ function renderTemplatesView(){
           <option value="task">Task</option><option value="approval">Approval</option>
           <option value="gate">Gate</option><option value="checklist">Checklist</option>
           <option value="commercial-terms">Commercial Terms</option>
+        </select></div>
+        <div class="field"><label>Page</label><select id="newStagePage">
+          <option value="project-flow">Project Flow</option>
+          <option value="execution">Execution</option>
         </select></div>
         <div class="field"><label>TAT — min days</label><input id="newStageTatMin" type="number" placeholder="e.g. 0"></div>
         <div class="field"><label>TAT — max days</label><input id="newStageTatMax" type="number" placeholder="e.g. 7"></div>
@@ -1970,6 +2089,7 @@ function renderTemplatesView(){
               <button class="btn ghost" data-ct-move-up="${f.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===0?'disabled':''}>↑</button>
               <button class="btn ghost" data-ct-move-down="${f.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===ctFields.length-1?'disabled':''}>↓</button>
               <button class="remove-x" data-ct-delete="${f.id}">✕</button>
+              <label style="display:block;margin-top:6px;font-size:11px;font-weight:400;"><input type="checkbox" data-ct-edit-approval="${f.id}" ${f.approvalRequired!==false?'checked':''} style="width:auto;"> Requires approval</label>
             </div>
           </div>`).join('')}
         <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
@@ -1980,6 +2100,7 @@ function renderTemplatesView(){
           <option value="textarea">Long text</option>
           <option value="number">Number</option>
         </select></div>
+        <div class="field"><label><input type="checkbox" id="newCtFieldApproval" checked style="width:auto;"> Requires approval</label></div>
         <div class="btn-row"><button class="btn primary" id="addCtFieldBtn">Add field at the end</button></div>
       </details>
     </div>`;
@@ -2007,6 +2128,9 @@ function renderTemplatesView(){
   el.querySelectorAll('[data-stage-edit-type]').forEach(sel=>{
     sel.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(sel.dataset.stageEditType)); if(st) st.type = sel.value; renumberAndSave(); };
   });
+  el.querySelectorAll('[data-stage-edit-page]').forEach(sel=>{
+    sel.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(sel.dataset.stageEditPage)); if(st) st.page = sel.value; renumberAndSave(); };
+  });
   el.querySelectorAll('[data-stage-edit-owner]').forEach(inp=>{
     inp.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(inp.dataset.stageEditOwner)); if(st) st.owner = inp.value.trim(); renumberAndSave(); };
   });
@@ -2021,6 +2145,12 @@ function renderTemplatesView(){
   });
   el.querySelectorAll('[data-stage-edit-desc]').forEach(ta=>{
     ta.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(ta.dataset.stageEditDesc)); if(st) st.desc = ta.value.trim(); renumberAndSave(); };
+  });
+  el.querySelectorAll('[data-stage-edit-reqassign]').forEach(chk=>{
+    chk.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(chk.dataset.stageEditReqassign)); if(st) st.requiresAssignment = chk.checked; renumberAndSave(); };
+  });
+  el.querySelectorAll('[data-stage-edit-reqapproval]').forEach(chk=>{
+    chk.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(chk.dataset.stageEditReqapproval)); if(st) st.requiresApproval = chk.checked; renumberAndSave(); };
   });
   el.querySelectorAll('[data-stage-edit-blroly]').forEach(chk=>{
     chk.onchange = ()=>{ const st = STAGES.find(x=>x.id===parseInt(chk.dataset.stageEditBlroly)); if(st) st.bangaloreOnly = chk.checked; renumberAndSave(); };
@@ -2055,10 +2185,16 @@ function renderTemplatesView(){
     const title = document.getElementById('newStageTitle').value.trim();
     if(!title) return;
     const type = document.getElementById('newStageType').value;
+    const page = document.getElementById('newStagePage').value;
     const tatMinDays = parseInt(document.getElementById('newStageTatMin').value) || 0;
     const tatMaxDays = parseInt(document.getElementById('newStageTatMax').value) || 7;
     const newId = STAGES.length ? Math.max(...STAGES.map(x=>x.id)) + 1 : 1;
-    STAGES.push({ id: newId, num: '00', title, type, owner: '', duration: `${tatMinDays}-${tatMaxDays}d`, tatMinDays, tatMaxDays, desc: '' });
+    // Sensible starting defaults based on type — same mapping used when migrating
+    // existing stages — admin can still flip either checkbox right after creating it.
+    let requiresAssignment = true, requiresApproval = false;
+    if(type === 'approval'){ requiresAssignment = false; requiresApproval = true; }
+    else if(type === 'commercial-terms' || type === 'checklist'){ requiresAssignment = false; requiresApproval = false; }
+    STAGES.push({ id: newId, num: '00', title, type, page, owner: '', duration: `${tatMinDays}-${tatMaxDays}d`, tatMinDays, tatMaxDays, desc: '', requiresAssignment, requiresApproval });
     document.getElementById('newStageTitle').value = '';
     await renumberAndSave();
   });
@@ -2074,6 +2210,9 @@ function renderTemplatesView(){
   });
   el.querySelectorAll('[data-ct-edit-type]').forEach(sel=>{
     sel.onchange = ()=>{ const f = board.commercialTermsFields.find(x=>x.id===sel.dataset.ctEditType); if(f) f.type = sel.value; saveCtFields(); };
+  });
+  el.querySelectorAll('[data-ct-edit-approval]').forEach(chk=>{
+    chk.onchange = ()=>{ const f = board.commercialTermsFields.find(x=>x.id===chk.dataset.ctEditApproval); if(f) f.approvalRequired = chk.checked; saveCtFields(); };
   });
   el.querySelectorAll('[data-ct-move-up]').forEach(btn=>{
     btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
@@ -2105,7 +2244,8 @@ function renderTemplatesView(){
     const label = document.getElementById('newCtFieldLabel').value.trim();
     if(!label) return;
     const type = document.getElementById('newCtFieldType').value;
-    board.commercialTermsFields.push({ id: uid('ctf'), label, type });
+    const approvalRequired = document.getElementById('newCtFieldApproval').checked;
+    board.commercialTermsFields.push({ id: uid('ctf'), label, type, approvalRequired });
     document.getElementById('newCtFieldLabel').value = '';
     await saveCtFields();
   });
@@ -2168,17 +2308,10 @@ function renderTabs(){
   if(sites.length === 0){ el.innerHTML=''; return; }
   el.innerHTML = sites.map(site=>{
     const st = storeState(site.id);
-    const curStage = STAGES.find(x=>x.id===st.current);
-    const curD = st.stageData[st.current];
-    const curT = curStage ? stageTiming(curStage, curD, site.id) : null;
-    let pipColor = 'var(--active)';
-    if(curStage && curStage.type==='approval') pipColor = 'var(--appr-ink)';
-    if(curStage && curStage.type==='gate') pipColor = 'var(--gate-ink)';
-    if(curStage && curStage.type==='commercial-terms') pipColor = 'var(--comm-ink)';
-    if(st.stageData[11] && st.stageData[11].status==='done') pipColor = 'var(--done)';
-    if(curT && curT.isOverdue) pipColor = '#C13E3E';
+    const pStatus = getProjectStatus(site, st);
+    const pipColor = site.id===activeStore ? '#fff' : pStatus.ink;
     return `<button class="store-tab ${site.id===activeStore?'active':''}" data-s="${site.id}">
-      <span class="pip" style="background:${site.id===activeStore?'#fff':pipColor}"></span>${escapeHtml(site.name.replace(' — ',' · '))}
+      <span class="pip" style="background:${pipColor}"></span>${escapeHtml(site.name.replace(' — ',' · '))}
     </button>`;
   }).join('');
   el.querySelectorAll('.store-tab').forEach(b=>{
@@ -2209,11 +2342,12 @@ function renderProjectList(){
     const doneFinal = s.stageData[11] && s.stageData[11].status === 'done';
     let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `${curStage.num} — ${curStage.title}` : '';
     if(s.projectClosed){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Project Closed'; }
-    else if(doneFinal){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Store opened'; }
-    else if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
-    else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
-    else if(curStage && curStage.type==='commercial-terms'){ pillBg='var(--comm-bg)'; pillInk='var(--comm-ink)'; }
-    if(curT && curT.isOverdue){ pillBg='#F3DCD8'; pillInk='#8A2E2E'; }
+    else {
+      const pStatus = getProjectStatus(site, s);
+      pillBg = pStatus.bg; pillInk = pStatus.ink;
+      if(pStatus.status === 'completed') label = 'Store opened';
+      else if(pStatus.status === 'dropped') label = 'Dropped';
+    }
     const draftTag = site.status === 'draft' ? `<span style="font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;">Draft</span>` : '';
     html += `<div class="admin-row" data-open-project="${site.id}" style="cursor:pointer;flex-wrap:wrap;">
       <div style="flex:1 1 100%;">
@@ -2256,14 +2390,16 @@ function renderDashboardView(){
     const curD = s.stageData[s.current];
     const curT = curStage ? stageTiming(curStage, curD, site.id) : null;
     let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `${curStage.num} — ${curStage.title}` : '';
-    if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
-    else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
-    else if(curStage && curStage.type==='commercial-terms'){ pillBg='var(--comm-bg)'; pillInk='var(--comm-ink)'; }
+    {
+      const pStatus = getProjectStatus(site, s);
+      pillBg = pStatus.bg; pillInk = pStatus.ink;
+      if(pStatus.status === 'completed') label = 'Store opened';
+      else if(pStatus.status === 'dropped') label = 'Dropped';
+    }
     const notStartedButPastDue = !curT && curD && curD.dueDate && Date.now() > curD.dueDate;
-    if((curT && curT.isOverdue) || notStartedButPastDue){ pillBg='#F3DCD8'; pillInk='#8A2E2E'; }
 
     let timingBit = '';
-    if(curT) timingBit = curT.isOverdue ? `${curT.overdueDays}d overdue` : `Day ${curT.elapsedDays} of ${curT.tatMin}-${curT.tatMax}d TAT`;
+    if(curT) timingBit = curT.isOverdue ? `${curT.overdueDays}d overdue` : `Day ${curT.elapsedDays} of ${fmtTatRange(curT.tatMin, curT.tatMax)} TAT`;
     else if(notStartedButPastDue) timingBit = `${Math.floor((Date.now()-curD.dueDate)/86400000)}d overdue — not started`;
     else if(curD && curD.dueDate) timingBit = `Projected due ${new Date(curD.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
 
@@ -2331,10 +2467,11 @@ function renderSummary(){
   const el = document.getElementById('storeSummary');
   let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `Stage ${curStage.num} — ${curStage.title}` : '';
   if(s.projectClosed){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Project Closed'; }
-  else if(doneFinal){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Store opened'; }
-  else if(curStage && curStage.type==='approval'){ pillBg='var(--appr-bg)'; pillInk='var(--appr-ink)'; }
-  else if(curStage && curStage.type==='gate'){ pillBg='var(--gate-bg)'; pillInk='var(--gate-ink)'; }
-  else if(curStage && curStage.type==='commercial-terms'){ pillBg='var(--comm-bg)'; pillInk='var(--comm-ink)'; }
+  else {
+    const pStatus = getProjectStatus(site, s);
+    pillBg = pStatus.bg; pillInk = pStatus.ink;
+    if(pStatus.status === 'completed') label = 'Store opened';
+  }
   // Flexible mode: work on a later stage can complete while an earlier one is still open —
   // make that visible instead of hiding it behind a single "current stage" label.
   let doneAheadNote = '';
@@ -2349,7 +2486,11 @@ function renderSummary(){
   const targetText = opening ? `${opening.label} ${fmtDate(opening.value)}` : 'target TBD — pending construction start';
   const commentCount = (s.comments || []).length;
   const showCloseBtn = isAdmin() && doneFinal && !s.projectClosed;
+  const myStakeholder = findMyStakeholder();
+  const myId = myStakeholder ? myStakeholder.id : null;
   const showDeleteBtn = isAdmin() || (site.ownerId && currentUser && site.ownerId === currentUser.email);
+  const showDropBtn = (isAdmin() || (myId && site.ownerId === myId)) && site.status !== 'dropped' && !(s.dropRequest && s.dropRequest.status === 'pending');
+  const iAmDropApprover = myId && (board.dropApprovers||[]).includes(myId);
   el.innerHTML = `
     <div>
       <div class="name">${escapeHtml(site.name)}</div>
@@ -2357,10 +2498,11 @@ function renderSummary(){
       ${doneAheadNote ? `<div class="city" style="color:var(--done);">${doneAheadNote}</div>` : ''}
       ${s.projectClosed ? `<div class="city" style="color:var(--done);">Closed by ${escapeHtml(s.closedBy)} · ${fmtDate(s.closedAt)}</div>` : ''}
       ${s.projectClosed && s.closureOverride ? `<div class="city" style="color:var(--gate-ink);">⚠ Closed with pending CapEx — override by ${escapeHtml(s.closureOverride.by)}: "${escapeHtml(s.closureOverride.reason)}"</div>` : ''}
+      ${site.status === 'dropped' ? `<div class="city" style="color:#5F5E5A;">Dropped by ${escapeHtml((s.dropRequest||{}).approvedByName||'someone')} · ${fmtDate((s.dropRequest||{}).approvedAt)} — reason: "${escapeHtml((s.dropRequest||{}).reason||'')}"</div>` : ''}
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <button class="switch-link" id="viewCommentsBtn" style="font-size:11px;">💬 ${commentCount}</button>
-      <div class="stage-pill" style="background:${pillBg};color:${pillInk};">${label}</div>
+      <div class="stage-pill" style="background:${pillBg};color:${pillInk};">${site.status==='dropped'?'Dropped':label}</div>
     </div>
   `;
   document.getElementById('viewCommentsBtn').onclick = openCommentsPanel;
@@ -2396,8 +2538,59 @@ function renderSummary(){
 
   const oldDeleteRow = document.getElementById('deleteProjectRow');
   if(oldDeleteRow) oldDeleteRow.remove();
-  if(showDeleteBtn){
+  const oldDropRow = document.getElementById('dropProjectRow');
+  if(oldDropRow) oldDropRow.remove();
+
+  if(s.dropRequest && s.dropRequest.status === 'pending'){
     const anchorEl = document.getElementById('closeProjectRow') || el;
+    anchorEl.insertAdjacentHTML('afterend', `<div id="dropProjectRow" style="padding:0 14px 14px;">
+      <div class="warn" style="margin-bottom:8px;">
+        ⚠ Drop request pending — requested by ${escapeHtml(s.dropRequest.requestedByName)} · ${fmtDate(s.dropRequest.requestedAt)}<br>
+        Reason: "${escapeHtml(s.dropRequest.reason)}"${s.dropRequest.remarks ? `<br>Remarks: "${escapeHtml(s.dropRequest.remarks)}"` : ''}
+      </div>
+      ${iAmDropApprover ? `<div class="btn-row">
+        <button class="btn decline" id="rejectDropBtn">Reject</button>
+        <button class="btn primary" id="approveDropBtn">Approve drop</button>
+      </div>` : ''}
+    </div>`);
+    const approveDropBtn = document.getElementById('approveDropBtn');
+    if(approveDropBtn) approveDropBtn.onclick = withClickLoading(approveDropBtn, 'Working…', async ()=>{
+      if(!window.confirm(`Drop "${site.name}"? It stays fully visible with all its history — this just marks it as no longer active.`)) return;
+      try{
+        const res = await respondToDropRequestFn({ siteId: site.id, approve: true });
+        if(res && res.data){ site.status = res.data.status; s.dropRequest = res.data.dropRequest; }
+        render();
+      }catch(e){ window.alert(e.message || 'Could not approve this drop request — try again.'); }
+    });
+    const rejectDropBtn = document.getElementById('rejectDropBtn');
+    if(rejectDropBtn) rejectDropBtn.onclick = withClickLoading(rejectDropBtn, 'Working…', async ()=>{
+      const rejectionRemarks = window.prompt('Reason for rejecting this drop request (optional):') || '';
+      try{
+        const res = await respondToDropRequestFn({ siteId: site.id, approve: false, rejectionRemarks });
+        if(res && res.data){ site.status = res.data.status; s.dropRequest = res.data.dropRequest; }
+        render();
+      }catch(e){ window.alert(e.message || 'Could not reject this drop request — try again.'); }
+    });
+  } else if(showDropBtn){
+    const anchorEl = document.getElementById('closeProjectRow') || el;
+    anchorEl.insertAdjacentHTML('afterend', `<div id="dropProjectRow" style="padding:0 14px 14px;">
+      <button class="btn ghost" id="dropProjectBtn" style="width:100%;">Drop Project</button>
+    </div>`);
+    const dropProjectBtn = document.getElementById('dropProjectBtn');
+    dropProjectBtn.onclick = withClickLoading(dropProjectBtn, 'Working…', async ()=>{
+      const reason = window.prompt(`Why are you dropping "${site.name}"? (e.g. Site not viable, Landlord backed out)`);
+      if(!reason || !reason.trim()) return;
+      const remarks = window.prompt('Any additional remarks? (optional)') || '';
+      try{
+        const res = await requestDropProjectFn({ siteId: site.id, reason: reason.trim(), remarks });
+        if(res && res.data){ s.dropRequest = res.data.dropRequest; }
+        render();
+      }catch(e){ window.alert(e.message || 'Could not submit the drop request — try again.'); }
+    });
+  }
+
+  if(showDeleteBtn){
+    const anchorEl = document.getElementById('dropProjectRow') || document.getElementById('closeProjectRow') || el;
     anchorEl.insertAdjacentHTML('afterend', `<div id="deleteProjectRow" style="padding:0 14px 14px;">
       <button class="btn ghost" id="deleteProjectBtn" style="width:100%;color:#8A2E2E;border-color:#8A2E2E;">Delete Project</button>
     </div>`);
@@ -2465,7 +2658,7 @@ function renderFlow(){
       const reasonBit = d.delayReason
         ? `Reason logged: "${escapeAndLinkify(d.delayReason)}" — ${escapeHtml(d.delayLoggedBy)}`
         : `No reason logged yet — tap the stage to log one.`;
-      if(t) return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${t.tatMin}-${t.tatMax}d TAT. ${reasonBit}</div>`;
+      if(t) return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) is ${t.overdueDays}d past its ${fmtTatRange(t.tatMin, t.tatMax)} TAT. ${reasonBit}</div>`;
       const dueDays = Math.floor((Date.now()-d.dueDate)/86400000);
       return `<div>⚠ Stage ${st.num} (${escapeHtml(st.title)}) hasn't started yet and is already ${dueDays}d past its projected due date. ${reasonBit}</div>`;
     }).join('') + `</div>`;
@@ -2477,7 +2670,11 @@ function renderFlow(){
     <button type="button" id="viewModeHorizontal" class="switch-link" style="text-decoration:none;${stageViewMode==='horizontal'?'font-weight:800;text-decoration:underline;':''}">⬌ Timeline</button>
   </div>`;
 
-  const stageMeta = STAGES.map(st=>{
+  // Filtered to whichever tab is active — Project Flow and Execution are one continuous
+  // sequence underneath (recompute/TAT/due-dates above already ran against the FULL
+  // STAGES array, unfiltered), this only decides which subset of that sequence actually
+  // renders as cards right now.
+  const stageMeta = STAGES.filter(st=>(st.page||'project-flow')===activePage).map(st=>{
     const d = s.stageData[st.id];
     if(d.status === 'skip') return { st, d, skip:true };
     const t = stageTiming(st, d, activeStore);
@@ -2485,10 +2682,10 @@ function renderFlow(){
     const notStartedButPastDue = !t && d.dueDate && Date.now() > d.dueDate && d.status !== 'done' && d.status !== 'skip';
     if((t && t.isOverdue) || notStartedButPastDue) dotCls = 'overdue';
     let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : ((t && t.isOverdue) || notStartedButPastDue ? '!' : st.num));
-    let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back'}[d.status];
+    let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back', awaiting_approval:'Awaiting approval'}[d.status];
     const defaultTat = effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays);
-    let slaBit = `TAT ${defaultTat.min}-${defaultTat.max}d`;
-    if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over TAT` : `Day ${t.elapsedDays} of ${t.tatMin}-${t.tatMax}d TAT`;
+    let slaBit = `TAT ${fmtTatRange(defaultTat.min, defaultTat.max)}`;
+    if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over TAT` : `Day ${t.elapsedDays} of ${fmtTatRange(t.tatMin, t.tatMax)} TAT`;
     else if(notStartedButPastDue) slaBit = `${Math.floor((Date.now()-d.dueDate)/86400000)}d overdue — not started yet`;
     else if(d.dueDate) slaBit = `Projected due ${new Date(d.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
     let ownerText = st.owner;
@@ -2516,7 +2713,9 @@ function renderFlow(){
       </div>
     </div>`;
 
-  if(stageViewMode === 'horizontal'){
+  if(stageMeta.length === 0){
+    html += `<div class="empty-note">No ${activePage==='execution'?'Execution':'Project Flow'} stages yet — add some in Templates → Stage Editor (set a stage's Page to ${activePage==='execution'?'Execution':'Project Flow'}).</div>`;
+  } else if(stageViewMode === 'horizontal'){
     html += `<div style="display:flex;overflow-x:auto;gap:4px;padding:8px 2px 14px;-webkit-overflow-scrolling:touch;">`;
     stageMeta.forEach(m=>{
       if(m.skip){
@@ -2600,6 +2799,56 @@ function renderFlow(){
   if(hBtn) hBtn.onclick = ()=>{ stageViewMode='horizontal'; try{localStorage.setItem('nsoStageViewMode','horizontal');}catch(e){} render(); };
 }
 
+// Shared approval-panel rendering — used by any generic requiresApproval stage AND by
+// P&L (stage 3), which needs its own specialized financial form to keep rendering even
+// when approval is turned on for it, rather than being replaced by this panel outright.
+// Kept as one function so the actual security-relevant markup (who can toggle a seat,
+// the ground-work gate) only exists in one place, not duplicated and risking drift.
+function renderApprovalPanelHtml(st, d, myId){
+  let html = '';
+  const needsGroundWorkFirst = st.requiresAssignment && !d.groundWorkCompleted;
+  if(needsGroundWorkFirst){
+    const assignedNames = (d.assignedTo||[]).map(id=>{ const p = board.stakeholders.find(x=>x.id===id); return p?p.name:null; }).filter(Boolean);
+    const iAmAssigned = myId && (d.assignedTo||[]).includes(myId);
+    html += `<div class="warn" style="background:var(--task-bg);border-color:var(--line);color:var(--ink);">
+      This stage needs the ground work marked complete before it goes to approval.<br>
+      ${assignedNames.length ? `Assigned: ${escapeHtml(assignedNames.join(', '))}` : 'Nobody assigned yet.'}
+    </div>`;
+    if(iAmAssigned){
+      html += `<div class="btn-row"><button class="btn primary" id="markGroundWorkBtn">Mark ground work complete</button></div>`;
+    }
+    return html;
+  }
+  if(st.requiresAssignment && d.groundWorkCompleted){
+    html += `<div class="progress-line" style="margin-bottom:8px;">Ground work completed by ${escapeHtml(d.groundWorkCompletedBy||'someone')} · ${timeAgo(d.groundWorkCompletedAt)}</div>`;
+  }
+  d.approvals = d.approvals || {};
+  const panel = ((board.stageApprovers && board.stageApprovers[st.id]) || []).map(id=>board.stakeholders.find(x=>x.id===id)).filter(Boolean);
+  const approvedCount = panel.filter(p=>d.approvals[p.id]).length;
+  if(panel.length === 0){
+    html += `<div class="warn">⚠ No approvers configured for this stage yet. Add them in Admin → Approvers.</div>`;
+  }
+  html += `<div class="approver-list">` + panel.map(p=>{
+    const rec = d.approvals[p.id];
+    const canToggle = p.id === myId; // only the actual seat-holder — no Admin override, by design
+    return `<div class="approver">
+      <div class="approver-name">${escapeHtml(p.name)} <span class="level-badge">${levelLabel(p.level)}</span>
+        ${rec ? `<div class="approver-stamp">✓ confirmed by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}</div>
+      <div class="check ${rec?'on':''}" ${canToggle ? `data-approver="${p.id}"` : ''} style="${canToggle?'':'cursor:default;opacity:0.7;'}" title="${canToggle?'':'Only '+escapeHtml(p.name)+' can sign off this seat'}">${rec?'✓':''}</div>
+    </div>`;
+  }).join('') + `</div>
+  <div class="progress-line">${approvedCount} / ${panel.length} signed off${d.status==='done' ? ' — all approved' : ''}</div>`;
+  if(d.status !== 'done'){
+    html += `<div class="btn-row">
+      <button class="btn decline" id="declineBtn">Decline — send back</button>
+      <button class="btn primary" id="closeBtn">Close</button>
+    </div>`;
+  }else{
+    html += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+  }
+  return html;
+}
+
 function openSheet(stageId){
   const st = STAGES.find(x=>x.id===stageId);
   const s = storeState(activeStore);
@@ -2611,7 +2860,7 @@ function openSheet(stageId){
   let inner = `
     <span class="stage-badge ${st.type} sheet-badge">${st.type}</span>
     <h2>${st.num} · ${escapeHtml(st.title)}</h2>
-    <div class="meta">${escapeHtml(st.owner)} · ${st.duration}</div>
+    <div class="meta">${escapeHtml(st.owner)} · ${fmtTatRange(effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays).min, effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays).max)} TAT</div>
     <div class="desc">${escapeHtml(st.desc)}${st.id===2 ? ` Preferred size for this site: <b>${FORMATS[site.format].sizeText}</b> (${FORMATS[site.format].label}).` : ''}</div>
   `;
   const myStakeholder = findMyStakeholder();
@@ -2644,7 +2893,7 @@ function openSheet(stageId){
 
   const t = stageTiming(st, d, activeStore);
   if(t){
-    inner += `<div class="meta" style="margin-top:8px;">Day ${t.elapsedDays} of ${t.tatMin}-${t.tatMax}d TAT${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
+    inner += `<div class="meta" style="margin-top:8px;">Day ${t.elapsedDays} of ${fmtTatRange(t.tatMin, t.tatMax)} TAT${t.isOverdue ? ` — <span style="color:#C13E3E;font-weight:700;">${t.overdueDays}d over</span>` : ''}</div>`;
   }
   if(t && t.isOverdue){
     inner += `<div class="warn">⚠ This stage is ${t.overdueDays} day(s) past its TAT.
@@ -2695,33 +2944,8 @@ function openSheet(stageId){
   }
   inner += `</details>`;
 
-  if(st.type === 'approval'){
-    d.approvals = d.approvals || {};
-    const panel = ((board.stageApprovers && board.stageApprovers[st.id]) || []).map(id=>board.stakeholders.find(x=>x.id===id)).filter(Boolean);
-    const approvedCount = panel.filter(p=>d.approvals[p.id]).length;
-    if(panel.length === 0){
-      inner += `<div class="warn">⚠ No approvers configured for this stage yet. Add them in Admin → Approvers.</div>`;
-    }
-    inner += `<div class="approver-list">` + panel.map(p=>{
-      const rec = d.approvals[p.id];
-      const canToggle = p.id === myId; // only the actual seat-holder — no Admin override, by design
-      return `<div class="approver">
-        <div class="approver-name">${escapeHtml(p.name)} <span class="level-badge">${levelLabel(p.level)}</span>
-          ${rec ? `<div class="approver-stamp">✓ confirmed by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}</div>
-        <div class="check ${rec?'on':''}" ${canToggle ? `data-approver="${p.id}"` : ''} style="${canToggle?'':'cursor:default;opacity:0.7;'}" title="${canToggle?'':'Only '+escapeHtml(p.name)+' can sign off this seat'}">${rec?'✓':''}</div>
-      </div>`;
-    }).join('') + `</div>
-    <div class="progress-line">${approvedCount} / ${panel.length} signed off${d.status==='done' ? ' — all approved' : ''}</div>`;
-    if(d.status !== 'done'){
-      inner += `<div class="btn-row">
-        <button class="btn decline" id="declineBtn">Decline — send back</button>
-        <button class="btn primary" id="closeBtn">Close</button>
-      </div>`;
-    }else{
-      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
-    }
-  } else if(st.id === 3){
-    d.financials = d.financials || { capex:'', dineInSteady:'', deliverySteady:'', dineInRamp:{}, deliveryRamp:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'' };
+  if(st.id === 3){
+    d.financials = d.financials || { capex:'', dineInSteady:'', deliverySteady:'', dineInRamp:{}, deliveryRamp:{}, y2GrowthPct:'', y3GrowthPct:'', cogsPct:'', fixedOpex:'', costLines:{} };
     const f = d.financials;
     // Migrate the single-stream model (Month 1 revenue + one index curve) into the new
     // two-channel shape — the old blended curve becomes the Dine-in channel unchanged
@@ -2764,19 +2988,47 @@ function openSheet(stageId){
       <div class="field"><label>Year 2 step-up (%)</label><input id="fx_y2" type="number" value="${f.y2GrowthPct}" placeholder="e.g. 15"></div>
       <div class="field"><label>Year 3 step-up (%)</label><input id="fx_y3" type="number" value="${f.y3GrowthPct}" placeholder="e.g. 12"></div>
       <div class="field"><label>COGS (% of revenue)</label><input id="fx_cogs" type="number" value="${f.cogsPct}" placeholder="e.g. 32"></div>
-      <div class="field"><label>Fixed monthly opex — rent, staff, utilities (₹)</label><input id="fx_opex" type="number" value="${f.fixedOpex}" placeholder="e.g. 450000"></div>
+      <div class="field">
+        <label>Restaurant costs — monthly (₹)</label>
+        ${(board.restaurantCostHeaders||[]).map(h=>`
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+            <span style="flex:1.3;font-size:12.5px;color:var(--ink);">${escapeHtml(h.label)}</span>
+            <input data-cost-line="${h.id}" type="number" value="${(f.costLines&&f.costLines[h.id]!==undefined)?f.costLines[h.id]:''}" placeholder="Amount" style="flex:1;">
+          </div>`).join('')}
+        ${(myId && (d.assignedTo||[]).includes(myId)) || isAdmin() ? `<button class="btn ghost" id="addCostLineBtn" style="width:auto;font-size:12px;padding:7px 12px;margin-top:2px;"><span style="margin-right:4px;">+</span>Add cost line</button>` : ''}
+      </div>
       <div class="btn-row"><button class="btn ghost" id="calcBtn">Calculate</button></div>
       <div id="fxResults"></div>
       <div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>
     `;
-    if(d.status !== 'done'){
-      inner += `<div class="btn-row">
-        <button class="btn ghost" id="saveNotesBtn">Save only</button>
-        <button class="btn primary" id="completeBtn">Save &amp; mark complete</button>
-      </div>`;
-    }else{
-      inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+    if(!st.requiresApproval){
+      // Unchanged from before approval existed as an option here — exactly the same
+      // behavior for every project that hasn't turned this on.
+      if(d.status !== 'done'){
+        inner += `<div class="btn-row">
+          <button class="btn ghost" id="saveNotesBtn">Save only</button>
+          <button class="btn primary" id="completeBtn">Save &amp; mark complete</button>
+        </div>`;
+      }else{
+        inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+      }
+    } else {
+      // Approval turned on for P&L — the numbers still save the same way, but "complete"
+      // now means "submit for approval" instead of finishing outright, and the approval
+      // panel (shared with every other approval-capable stage) renders below the form.
+      const needsGroundWorkFirst = st.requiresAssignment && !d.groundWorkCompleted;
+      if(needsGroundWorkFirst){
+        inner += `<div class="btn-row">
+          <button class="btn ghost" id="saveNotesBtn">Save only</button>
+          <button class="btn primary" id="submitForApprovalBtn">Save &amp; submit for approval</button>
+        </div>`;
+      } else if(d.status !== 'done'){
+        inner += `<div class="btn-row"><button class="btn ghost" id="saveNotesBtn">Save only</button></div>`;
+      }
+      inner += renderApprovalPanelHtml(st, d, myId);
     }
+  } else if(st.requiresApproval){
+    inner += renderApprovalPanelHtml(st, d, myId);
   } else if(st.type === 'gate'){
     inner += `<div class="progress-line">${d.status==='done' ? 'Confirmed by landlord' : 'Awaiting written confirmation'}</div>`;
     if(d.status !== 'done'){
@@ -2905,17 +3157,19 @@ function openSheet(stageId){
     d.commercialTerms = d.commercialTerms || {};
     d.commercialTermsApprovals = d.commercialTermsApprovals || {};
     const fields = board.commercialTermsFields || [];
+    const requiredFields = fields.filter(f=>f.approvalRequired !== false);
     const ctApprovers = (board.stageApprovers && board.stageApprovers[st.id]) || [];
     const iAmCtApprover = myId && ctApprovers.includes(myId);
-    const approvedCount = fields.filter(f=>d.commercialTermsApprovals[f.id]).length;
-    if(ctApprovers.length === 0){
+    const approvedCount = requiredFields.filter(f=>d.commercialTermsApprovals[f.id]).length;
+    if(ctApprovers.length === 0 && requiredFields.length){
       inner += `<div class="warn">⚠ No approvers configured for this stage yet. Add them in Admin → Approvers.</div>`;
     }
-    inner += `<details class="collapse-group" open><summary>Commercial Terms (${fields.length} fields) <span style="font-weight:400;color:var(--sub);font-size:11px;">${approvedCount}/${fields.length} approved</span></summary>`;
+    inner += `<details class="collapse-group" open><summary>Commercial Terms (${fields.length} fields) <span style="font-weight:400;color:var(--sub);font-size:11px;">${approvedCount}/${requiredFields.length} approved</span></summary>`;
     fields.forEach(f=>{
       const val = d.commercialTerms[f.id] || '';
-      const rec = d.commercialTermsApprovals[f.id];
-      const canToggle = iAmCtApprover && (!rec || rec.byId === myId); // any approver can approve; only that same approver can undo it
+      const needsApproval = f.approvalRequired !== false;
+      const rec = needsApproval ? d.commercialTermsApprovals[f.id] : null;
+      const canToggle = needsApproval && iAmCtApprover && (!rec || rec.byId === myId); // any approver can approve; only that same approver can undo it
       inner += `<div class="field" style="border:1px solid ${rec?'var(--green,#2F7A4F)':'var(--line)'};border-radius:8px;padding:10px;margin-bottom:8px;">
         <label>${escapeHtml(f.label)}</label>`;
       if(f.type === 'textarea'){
@@ -2923,10 +3177,13 @@ function openSheet(stageId){
       } else {
         inner += `<input data-ct-field="${f.id}" type="${f.type==='number'?'number':'text'}" value="${escapeHtml(val)}">`;
       }
-      inner += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
-        <span style="font-size:11px;color:var(--sub);">${rec ? `✓ Approved by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}` : 'Not yet approved'}</span>
-        ${canToggle ? `<button class="btn ghost" data-ct-approve="${f.id}" style="width:auto;font-size:11px;padding:5px 10px;">${rec?'Undo':'Approve'}</button>` : ''}
-      </div></div>`;
+      if(needsApproval){
+        inner += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+          <span style="font-size:11px;color:var(--sub);">${rec ? `✓ Approved by ${escapeHtml(rec.by)} · ${timeAgo(rec.at)}` : 'Not yet approved'}</span>
+          ${canToggle ? `<button class="btn ghost" data-ct-approve="${f.id}" style="width:auto;font-size:11px;padding:5px 10px;">${rec?'Undo':'Approve'}</button>` : ''}
+        </div>`;
+      }
+      inner += `</div>`;
     });
     inner += `</details>`;
     inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
@@ -2966,6 +3223,10 @@ function readFxInputs(){
     const yEl = document.getElementById(`fx_delivery_ramp_${m}`);
     if(yEl) deliveryRamp[m] = yEl.value;
   }
+  const costLines = {};
+  document.querySelectorAll('[data-cost-line]').forEach(inp=>{
+    costLines[inp.dataset.costLine] = inp.value;
+  });
   return {
     capex: document.getElementById('fx_capex').value,
     dineInSteady: document.getElementById('fx_dinein_steady').value,
@@ -2975,7 +3236,7 @@ function readFxInputs(){
     y2GrowthPct: document.getElementById('fx_y2').value,
     y3GrowthPct: document.getElementById('fx_y3').value,
     cogsPct: document.getElementById('fx_cogs').value,
-    fixedOpex: document.getElementById('fx_opex').value,
+    costLines,
   };
 }
 function renderFxResults(f){
@@ -3115,6 +3376,22 @@ function wireSheetActions(st, s, d){
 
   const calcBtn = document.getElementById('calcBtn');
   if(calcBtn) calcBtn.onclick = ()=> renderFxResults(readFxInputs());
+
+  const addCostLineBtn = document.getElementById('addCostLineBtn');
+  if(addCostLineBtn) addCostLineBtn.onclick = withClickLoading(addCostLineBtn, 'Working…', async ()=>{
+    const label = window.prompt('New cost line — e.g. Marketing, Insurance, Equipment lease');
+    if(!label || !label.trim()) return;
+    // Save whatever's already been typed into the other cost lines first, so adding a
+    // new one doesn't wipe out numbers the person just entered.
+    d.financials = readFxInputs();
+    board.restaurantCostHeaders = board.restaurantCostHeaders || [];
+    const newHeader = { id: uid('cost'), label: label.trim() };
+    board.restaurantCostHeaders.push(newHeader);
+    d.financials.costLines = d.financials.costLines || {};
+    d.financials.costLines[newHeader.id] = '';
+    await saveBoard();
+    render(); openSheet(st.id);
+  });
 
   document.querySelectorAll('[data-task-done]').forEach(chk=>{
     chk.onchange = async ()=>{
@@ -3282,6 +3559,22 @@ function wireSheetActions(st, s, d){
     });
   });
 
+  const markGroundWorkBtn = document.getElementById('markGroundWorkBtn');
+  if(markGroundWorkBtn) markGroundWorkBtn.onclick = withClickLoading(markGroundWorkBtn, 'Working…', async ()=>{
+    try{
+      const res = await markGroundWorkCompleteFn({ siteId: activeStore, stageId: st.id });
+      if(res && res.data){
+        d.groundWorkCompleted = true;
+        d.groundWorkCompletedBy = res.data.groundWorkCompletedBy;
+        d.groundWorkCompletedAt = res.data.groundWorkCompletedAt;
+        d.status = res.data.status;
+      }
+      render(); openSheet(st.id);
+    }catch(e){
+      window.alert(e.message || 'Could not mark this complete — try again.');
+    }
+  });
+
   const declineBtn = document.getElementById('declineBtn');
   if(declineBtn) declineBtn.onclick = withClickLoading(declineBtn, 'Working…', async ()=>{
     const who = getWho();
@@ -3322,6 +3615,31 @@ function wireSheetActions(st, s, d){
     if(st.id === 7) s.signingDate = Date.now();
     s.log.push({stageId:st.id, text:`Marked complete by ${who}`, at: Date.now()});
     await saveBoard(); render(); closeSheet();
+  });
+
+  const submitForApprovalBtn = document.getElementById('submitForApprovalBtn');
+  if(submitForApprovalBtn) submitForApprovalBtn.onclick = withClickLoading(submitForApprovalBtn, 'Working…', async ()=>{
+    // Same save-first behavior as "Save & mark complete" above, but this stage now
+    // requires approval — so instead of a direct client-side status set, it goes through
+    // the same secured ground-work-complete path every other Type 4 stage uses. Save the
+    // numbers via the normal client write (financials themselves aren't approval-gated,
+    // only the stage's completion is), then hand off completion to the server.
+    if(st.id === 3) d.financials = readFxInputs();
+    const notes = document.getElementById('notesField');
+    if(notes) d.notes = notes.value.trim();
+    await saveBoard();
+    try{
+      const res = await markGroundWorkCompleteFn({ siteId: activeStore, stageId: st.id });
+      if(res && res.data){
+        d.groundWorkCompleted = true;
+        d.groundWorkCompletedBy = res.data.groundWorkCompletedBy;
+        d.groundWorkCompletedAt = res.data.groundWorkCompletedAt;
+        d.status = res.data.status;
+      }
+      render(); openSheet(st.id);
+    }catch(e){
+      window.alert(e.message || 'Could not submit this for approval — try again.');
+    }
   });
 
   const saveNotesBtn = document.getElementById('saveNotesBtn');
@@ -3478,7 +3796,7 @@ function renderAdmin(){
     <div class="admin-section">
       <h3>Approvers</h3>
       <div class="sub">Each approval-capable stage has its own list. Only stakeholders tagged Approver above are eligible. A stage needs every one of its listed approvers to sign off (or, for Commercial Terms, any one of them per line).</div>
-      ${STAGES.filter(st=>st.type==='approval' || st.type==='commercial-terms').map(st=>{
+      ${STAGES.filter(st=>st.requiresApproval || st.type==='commercial-terms').map(st=>{
         const eligible = board.stakeholders.filter(p=>p.isApprover);
         const current = (board.stageApprovers && board.stageApprovers[st.id]) || [];
         const currentPeople = current.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
@@ -3493,6 +3811,23 @@ function renderAdmin(){
           </select>
         </div>`;
       }).join('')}
+    </div>
+
+    <div class="admin-section">
+      <h3>Drop Request Approvers</h3>
+      <div class="sub">Anyone on this list can approve or reject a Drop Project request — any one of them is enough. Only stakeholders tagged Approver above are eligible.</div>
+      ${(()=>{
+        const eligible = board.stakeholders.filter(p=>p.isApprover);
+        const current = board.dropApprovers || [];
+        const currentPeople = current.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
+        return `${currentPeople.length === 0 ? `<div class="admin-row-sub" style="padding:4px 0;">No approvers yet.</div>` : currentPeople.map(p=>`
+          <div class="admin-row"><div class="admin-row-main">${escapeHtml(p.name)}</div><button class="remove-x" data-remove-drop-approver="${p.id}">✕</button></div>
+        `).join('')}
+        <select id="addDropApproverSelect" style="margin-top:6px;">
+          <option value="">— add an approver —</option>
+          ${eligible.filter(p=>!current.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${levelLabel(p.level)})</option>`).join('')}
+        </select>`;
+      })()}
     </div>
 
     <div class="admin-section" id="adminSlaSection">
@@ -3511,7 +3846,7 @@ function renderAdmin(){
             const ov = (board.tatOverrides[slaEditorSiteId] && board.tatOverrides[slaEditorSiteId]['stage_'+st.id]) || {};
             return `
             <div class="admin-row">
-              <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)} <span class="admin-row-sub">(default ${st.tatMinDays}-${st.tatMaxDays}d)</span></div>
+              <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)} <span class="admin-row-sub">(default ${fmtTatRange(st.tatMinDays, st.tatMaxDays)})</span></div>
               <input type="number" data-tat-override-min="stage_${st.id}" value="${ov.min !== undefined ? ov.min : ''}" placeholder="min" style="width:60px;font-size:12px;padding:6px 8px;">
               <input type="number" data-tat-override-max="stage_${st.id}" value="${ov.max !== undefined ? ov.max : ''}" placeholder="max" style="width:60px;font-size:12px;padding:6px 8px;">
             </div>`;
@@ -3521,7 +3856,7 @@ function renderAdmin(){
             const ov = (board.tatOverrides[slaEditorSiteId] && board.tatOverrides[slaEditorSiteId]['task_'+item.key]) || {};
             return `
             <div class="admin-row">
-              <div class="admin-row-main" style="flex:1;">${escapeHtml(item.label)} <span class="admin-row-sub">(default ${item.tatMinDays}-${item.tatMaxDays}d)</span></div>
+              <div class="admin-row-main" style="flex:1;">${escapeHtml(item.label)} <span class="admin-row-sub">(default ${fmtTatRange(item.tatMinDays, item.tatMaxDays)})</span></div>
               <input type="number" data-tat-override-min="task_${item.key}" value="${ov.min !== undefined ? ov.min : ''}" placeholder="min" style="width:60px;font-size:12px;padding:6px 8px;">
               <input type="number" data-tat-override-max="task_${item.key}" value="${ov.max !== undefined ? ov.max : ''}" placeholder="max" style="width:60px;font-size:12px;padding:6px 8px;">
             </div>`;
@@ -3673,7 +4008,8 @@ function renderAdmin(){
   _loadBtn_admAddSite.onclick = withClickLoading(_loadBtn_admAddSite, 'Working…', async ()=>{
     const name = document.getElementById('admSiteName').value.trim();
     if(!name) return;
-    const site = { id: uid('site'), name, city: document.getElementById('admSiteCity').value, format: document.getElementById('admSiteFormat').value, templateId: 'tmpl_nso', status: 'live', ownerId: null };
+    const myS = findMyStakeholder();
+    const site = { id: uid('site'), name, city: document.getElementById('admSiteCity').value, format: document.getElementById('admSiteFormat').value, templateId: 'tmpl_nso', status: 'live', ownerId: myS ? myS.id : null };
     board.sites.push(site);
     board.siteData[site.id] = makeSiteData(site);
     activeStore = site.id;
@@ -3871,9 +4207,34 @@ function renderAdmin(){
       }catch(e){ window.alert(e.message || 'Could not remove that approver — try again.'); }
     });
   });
+
+  const addDropApproverSelect = document.getElementById('addDropApproverSelect');
+  if(addDropApproverSelect) addDropApproverSelect.onchange = async ()=>{
+    const personId = addDropApproverSelect.value;
+    if(!personId) return;
+    try{
+      const res = await addDropApproverFn({ personId });
+      if(res && res.data) board.dropApprovers = res.data.approvers;
+      render();
+    }catch(e){ window.alert(e.message || 'Could not add that approver — try again.'); render(); }
+  };
+  el.querySelectorAll('[data-remove-drop-approver]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      try{
+        const res = await removeDropApproverFn({ personId: btn.dataset.removeDropApprover });
+        if(res && res.data) board.dropApprovers = res.data.approvers;
+        render();
+      }catch(e){ window.alert(e.message || 'Could not remove that approver — try again.'); }
+    });
+  });
 }
 
-document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; trackerSubView='list'; render(); };
+document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; activePage='project-flow'; trackerSubView='list'; render(); };
+document.getElementById('navExecution').onclick = ()=>{
+  currentView='tracker'; activePage='execution';
+  trackerSubView = activeStore ? 'detail' : 'list'; // stay on whichever project's already open, same project across both tabs
+  render();
+};
 document.getElementById('navDashboard').onclick = ()=>{ currentView='dashboard'; render(); };
 document.getElementById('backToProjectListBtn').onclick = ()=>{ trackerSubView='list'; render(); };
 document.getElementById('navMyTasks').onclick = ()=>{ currentView='myTasks'; render(); };
