@@ -952,6 +952,15 @@ function migrateStageStructure(){
       }
       changed = true;
     }
+    // Correct an existing bad state directly — these two checkboxes were toggleable in
+    // Stage Editor for every stage, including Commercial Terms and the checklist, even
+    // though they have their own dedicated approval/assignment handling and must never
+    // route through the generic one. Runs every load, not just once, so it self-heals
+    // regardless of how the flags got set to true.
+    if((st.type === 'commercial-terms' || st.type === 'checklist') && (st.requiresAssignment || st.requiresApproval)){
+      st.requiresAssignment = false; st.requiresApproval = false;
+      changed = true;
+    }
     // Execution page classification — every existing stage is Project Flow by default,
     // so nothing currently in the pipeline moves to the new Execution tab on its own.
     // This is purely a display grouping — recompute(), TAT, due dates, and overdue
@@ -2103,11 +2112,11 @@ function renderTemplatesView(){
           <input data-stage-edit-parallel="${st.id}" value="${escapeHtml(st.parallelGroup||'')}" placeholder="Parallel group (blank = none)" style="width:150px;font-size:11.5px;">
           <textarea data-stage-edit-desc="${st.id}" placeholder="Description" style="flex:1 1 100%;font-size:11.5px;min-height:44px;margin-top:6px;">${escapeHtml(st.desc||'')}</textarea>
           <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex:1 1 100%;flex-wrap:wrap;">
-            <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
-              <input type="checkbox" data-stage-edit-reqassign="${st.id}" ${st.requiresAssignment?'checked':''} style="width:auto;"> Requires assignment
+            <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;" title="${(st.type==='commercial-terms'||st.type==='checklist')?'Not used by this stage type — it has its own dedicated approval/assignment handling.':''}">
+              <input type="checkbox" data-stage-edit-reqassign="${st.id}" ${st.requiresAssignment?'checked':''} ${(st.type==='commercial-terms'||st.type==='checklist')?'disabled':''} style="width:auto;"> Requires assignment
             </label>
-            <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
-              <input type="checkbox" data-stage-edit-reqapproval="${st.id}" ${st.requiresApproval?'checked':''} style="width:auto;"> Requires approval
+            <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;" title="${(st.type==='commercial-terms'||st.type==='checklist')?'Not used by this stage type — it has its own dedicated approval/assignment handling.':''}">
+              <input type="checkbox" data-stage-edit-reqapproval="${st.id}" ${st.requiresApproval?'checked':''} ${(st.type==='commercial-terms'||st.type==='checklist')?'disabled':''} style="width:auto;"> Requires approval
             </label>
             <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;">
               <input type="checkbox" data-stage-edit-blroly="${st.id}" ${st.bangaloreOnly?'checked':''} style="width:auto;"> Bangalore only
@@ -3253,7 +3262,13 @@ function openSheet(stageId){
       }
       inner += renderApprovalPanelHtml(st, d, myId);
     }
-  } else if(st.requiresApproval){
+  } else if(st.requiresApproval && st.type !== 'commercial-terms' && st.type !== 'checklist'){
+    // Commercial Terms and the Post-LOI checklist have their own dedicated rendering
+    // and their own approval mechanisms (per-line for Commercial Terms; none for the
+    // checklist) — they must never be caught by the generic approval-panel branch here,
+    // regardless of what the Requires Approval checkbox says in Stage Editor. Those two
+    // checkboxes are meaningless for these two types and shouldn't have been toggleable
+    // on them in the first place (fixed separately below).
     inner += renderApprovalPanelHtml(st, d, myId);
   } else if(st.type === 'gate'){
     inner += `<div class="progress-line">${d.status==='done' ? 'Confirmed by landlord' : 'Awaiting written confirmation'}</div>`;
