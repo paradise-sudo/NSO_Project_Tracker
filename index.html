@@ -248,6 +248,8 @@
   .field textarea{min-height:56px;resize:vertical;}
   .progress-line{font-size:12px;color:var(--sub);margin-top:8px;font-family:'Inter',sans-serif;}
   .log{font-size:11px;color:var(--sub);margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;line-height:1.6;max-height:110px;overflow-y:auto;}
+  .log-entry{margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed var(--line);}
+  .log-entry:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none;}
   .loading{text-align:center;padding:50px;color:var(--sub);font-family:'Inter',sans-serif;font-size:12.5px;}
 
   /* Admin view */
@@ -870,7 +872,7 @@ function subscribeToBoard(){
 function migrateStageStructure(){
   if(!board || !board.sites) return;
   let changed = false;
-  if(!board.cities){ board.cities = [{code:'BLR', name:'Bangalore'}, {code:'CHN', name:'Chennai'}]; changed = true; }
+  if(!board.cities || board.cities.length === 0){ board.cities = [{code:'BLR', name:'Bangalore'}, {code:'CHN', name:'Chennai'}]; changed = true; }
   // TAT is now a range {min, max} instead of one number — migrate any existing
   // per-project overrides from the old single-value shape, treating that old number as
   // both ends of the range so nothing's behavior changes until someone widens it.
@@ -912,11 +914,11 @@ function migrateStageStructure(){
     STAGES.forEach((st,i)=>{ st.num = String(i+2).padStart(2,'0'); });
     changed = true;
   }
-  if(!board.commercialTermsFields){ board.commercialTermsFields = defaultCommercialTermsFields(); changed = true; }
-  if(!board.restaurantCostHeaders){ board.restaurantCostHeaders = defaultRestaurantCostHeaders(); changed = true; }
+  if(!board.commercialTermsFields || board.commercialTermsFields.length === 0){ board.commercialTermsFields = defaultCommercialTermsFields(); changed = true; }
+  if(!board.restaurantCostHeaders || board.restaurantCostHeaders.length === 0){ board.restaurantCostHeaders = defaultRestaurantCostHeaders(); changed = true; }
   if(!board.dropApprovers){ board.dropApprovers = []; changed = true; }
-  if(!board.postLoiTasks){ board.postLoiTasks = defaultPostLoiTasks(); changed = true; }
-  if(!board.postLoiDelivery){ board.postLoiDelivery = defaultPostLoiDelivery(); changed = true; }
+  if(!board.postLoiTasks || board.postLoiTasks.length === 0){ board.postLoiTasks = defaultPostLoiTasks(); changed = true; }
+  if(!board.postLoiDelivery || board.postLoiDelivery.length === 0){ board.postLoiDelivery = defaultPostLoiDelivery(); changed = true; }
   // Migrate each project's single fixedOpex number into the new itemized costLines
   // shape, under the SAME header id ('fixedOpex') the default list starts with — so
   // existing payback/ROI numbers don't change the moment this loads, just the storage
@@ -1028,6 +1030,17 @@ function migrateStageStructure(){
       }
       if(!s.stageData[st.id].attachments){ s.stageData[st.id].attachments = []; changed = true; }
       if(!s.stageData[st.id].blockerFlags){ s.stageData[st.id].blockerFlags = []; changed = true; }
+      // Notes move from one shared box (whoever saved last silently overwrote anyone
+      // before them) to an attributed, append-only log. Existing notes become the first
+      // log entry rather than being lost — attributed to whoever the stage's own
+      // updatedBy/updatedAt already shows, since that's the closest fact on record.
+      if(s.stageData[st.id].notesLog === undefined){
+        const oldNotes = s.stageData[st.id].notes;
+        s.stageData[st.id].notesLog = (oldNotes && oldNotes.trim())
+          ? [{ text: oldNotes.trim(), by: s.stageData[st.id].updatedBy || 'Unknown', byId: null, at: s.stageData[st.id].updatedAt || Date.now() }]
+          : [];
+        changed = true;
+      }
       if(!Array.isArray(s.stageData[st.id].assignedTo)){ s.stageData[st.id].assignedTo = s.stageData[st.id].assignedTo ? [s.stageData[st.id].assignedTo] : []; changed = true; }
       if(st.id === 11 && !s.stageData[11].tasks){
         s.stageData[11].tasks = {};
@@ -2995,6 +3008,26 @@ function renderFlow(){
 // when approval is turned on for it, rather than being replaced by this panel outright.
 // Kept as one function so the actual security-relevant markup (who can toggle a seat,
 // the ground-work gate) only exists in one place, not duplicated and risking drift.
+// Notes, everywhere in the app — a running, attributed log instead of one shared box
+// that whoever saves last silently overwrites. Every entry keeps who wrote it and when,
+// so if Ayush and Kapil both update the same stage, both notes survive, lined up in
+// order, rather than one replacing the other with no trace.
+function renderNotesSection(d){
+  d.notesLog = d.notesLog || [];
+  let html = `<details class="collapse-group"><summary>Notes <span style="font-weight:400;color:var(--sub);font-size:11px;">${d.notesLog.length}</span></summary>`;
+  if(d.notesLog.length){
+    html += `<div class="log">` + d.notesLog.slice().reverse().map(n=>`
+      <div class="log-entry">
+        <div>${escapeHtml(n.text)}</div>
+        <div class="approver-stamp">${escapeHtml(n.by)} · ${timeAgo(n.at)}</div>
+      </div>`).join('') + `</div>`;
+  }
+  html += `<div class="field" style="margin-top:8px;"><textarea id="notesField" placeholder="Add a note..."></textarea></div>
+    <div class="btn-row"><button class="btn ghost" id="addNoteBtn">Add note</button></div>
+  </details>`;
+  return html;
+}
+
 function renderApprovalPanelHtml(st, d, myId){
   let html = '';
   const needsGroundWorkFirst = st.requiresAssignment && !d.groundWorkCompleted;
@@ -3008,6 +3041,7 @@ function renderApprovalPanelHtml(st, d, myId){
     if(iAmAssigned){
       html += `<div class="btn-row"><button class="btn primary" id="markGroundWorkBtn">Mark ground work complete</button></div>`;
     }
+    html += renderNotesSection(d);
     return html;
   }
   if(st.requiresAssignment && d.groundWorkCompleted){
@@ -3029,6 +3063,7 @@ function renderApprovalPanelHtml(st, d, myId){
     </div>`;
   }).join('') + `</div>
   <div class="progress-line">${approvedCount} / ${panel.length} signed off${d.status==='done' ? ' — all approved' : ''}</div>`;
+  html += renderNotesSection(d);
   if(d.status !== 'done'){
     html += `<div class="btn-row">
       <button class="btn decline" id="declineBtn">Decline — send back</button>
@@ -3190,14 +3225,14 @@ function openSheet(stageId){
       </div>
       <div class="btn-row"><button class="btn ghost" id="calcBtn">Calculate</button></div>
       <div id="fxResults"></div>
-      <div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>
+      ${renderNotesSection(d)}
     `;
     if(!st.requiresApproval){
       // Unchanged from before approval existed as an option here — exactly the same
       // behavior for every project that hasn't turned this on.
       if(d.status !== 'done'){
         inner += `<div class="btn-row">
-          <button class="btn ghost" id="saveNotesBtn">Save only</button>
+          <button class="btn ghost" id="saveFinancialsOnlyBtn">Save only</button>
           <button class="btn primary" id="completeBtn">Save &amp; mark complete</button>
         </div>`;
       }else{
@@ -3210,11 +3245,11 @@ function openSheet(stageId){
       const needsGroundWorkFirst = st.requiresAssignment && !d.groundWorkCompleted;
       if(needsGroundWorkFirst){
         inner += `<div class="btn-row">
-          <button class="btn ghost" id="saveNotesBtn">Save only</button>
+          <button class="btn ghost" id="saveFinancialsOnlyBtn">Save only</button>
           <button class="btn primary" id="submitForApprovalBtn">Save &amp; submit for approval</button>
         </div>`;
       } else if(d.status !== 'done'){
-        inner += `<div class="btn-row"><button class="btn ghost" id="saveNotesBtn">Save only</button></div>`;
+        inner += `<div class="btn-row"><button class="btn ghost" id="saveFinancialsOnlyBtn">Save only</button></div>`;
       }
       inner += renderApprovalPanelHtml(st, d, myId);
     }
@@ -3331,6 +3366,7 @@ function openSheet(stageId){
     });
     inner += `</details>`;
 
+    inner += renderNotesSection(d);
     inner += `<div class="btn-row"><button class="btn primary" id="saveChecklistBtn">Save details</button></div>`;
     if(d.status === 'done'){
       inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
@@ -3368,17 +3404,15 @@ function openSheet(stageId){
       inner += `</div>`;
     });
     inner += `</details>`;
-    inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
     inner += `<div class="btn-row"><button class="btn ghost" id="saveCommercialTermsBtn">Save terms</button></div>`;
-    inner += `<div class="btn-row"><button class="btn ghost" id="saveNotesBtn">Save notes</button></div>`;
+    inner += renderNotesSection(d);
     if(d.status === 'done'){
       inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
     }
   } else {
-    inner += `<div class="field"><label>Notes</label><textarea id="notesField" placeholder="Status / next step...">${escapeHtml(d.notes||'')}</textarea></div>`;
+    inner += renderNotesSection(d);
     if(d.status !== 'done'){
       inner += `<div class="btn-row">
-        <button class="btn ghost" id="saveNotesBtn">Save notes</button>
         <button class="btn primary" id="completeBtn">Mark complete</button>
       </div>`;
     }else{
@@ -3778,8 +3812,6 @@ function wireSheetActions(st, s, d){
   const completeBtn = document.getElementById('completeBtn');
   if(completeBtn) completeBtn.onclick = withClickLoading(completeBtn, 'Working…', async ()=>{
     const who = getWho();
-    const notes = document.getElementById('notesField');
-    if(notes) d.notes = notes.value.trim();
     if(st.id === 3) d.financials = readFxInputs();
     d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
     if(st.id === 7) s.signingDate = Date.now();
@@ -3795,8 +3827,6 @@ function wireSheetActions(st, s, d){
     // numbers via the normal client write (financials themselves aren't approval-gated,
     // only the stage's completion is), then hand off completion to the server.
     if(st.id === 3) d.financials = readFxInputs();
-    const notes = document.getElementById('notesField');
-    if(notes) d.notes = notes.value.trim();
     await saveBoard();
     try{
       const res = await markGroundWorkCompleteFn({ siteId: activeStore, stageId: st.id });
@@ -3812,13 +3842,23 @@ function wireSheetActions(st, s, d){
     }
   });
 
-  const saveNotesBtn = document.getElementById('saveNotesBtn');
-  if(saveNotesBtn) saveNotesBtn.onclick = withClickLoading(saveNotesBtn, 'Working…', async ()=>{
+  const saveFinancialsOnlyBtn = document.getElementById('saveFinancialsOnlyBtn');
+  if(saveFinancialsOnlyBtn) saveFinancialsOnlyBtn.onclick = withClickLoading(saveFinancialsOnlyBtn, 'Working…', async ()=>{
     const who = getWho();
-    d.notes = document.getElementById('notesField').value.trim();
     if(st.id === 3) d.financials = readFxInputs();
     d.updatedBy = who; d.updatedAt = Date.now();
     await saveBoard(); render(); closeSheet();
+  });
+
+  const addNoteBtn = document.getElementById('addNoteBtn');
+  if(addNoteBtn) addNoteBtn.onclick = withClickLoading(addNoteBtn, 'Working…', async ()=>{
+    const field = document.getElementById('notesField');
+    const text = field ? field.value.trim() : '';
+    if(!text) return;
+    const who = getWho();
+    d.notesLog = d.notesLog || [];
+    d.notesLog.push({ text, by: who, byId: (findMyStakeholder()||{}).id || null, at: Date.now() });
+    await saveBoard(); render(); openSheet(st.id);
   });
 }
 function closeSheet(){ document.getElementById('sheetBackdrop').classList.remove('open'); }
