@@ -576,26 +576,32 @@ let STAGES = [
 
 // ---- Stage 11 checklist item definitions (from NSO Projects 2026–27, rows 3 & 4) ----
 // Tasks: real TAT targets, days counted from Construction Start (the stage's startedAt)
-const STAGE11_TASKS = [
-  {key:'constructionStart', label:'Construction Start', tatMinDays:0, tatMaxDays:0},
-  {key:'equipmentIndent', label:"Equipment's Indent", tatMinDays:0, tatMaxDays:2},
-  {key:'storeTeamHiring', label:'Store Team Hiring', tatMinDays:0, tatMaxDays:20},
-  {key:'training', label:'Training', tatMinDays:0, tatMaxDays:40},
-  {key:'marketingPlan', label:'Marketing Plan', tatMinDays:0, tatMaxDays:42},
-  {key:'gstCertificate', label:'GST Certificate', tatMinDays:0, tatMaxDays:40},
-  {key:'licenses', label:'Licenses (Trade, FSSAI, Labour)', tatMinDays:0, tatMaxDays:40},
-  {key:'edcMachine', label:'EDC Machine', tatMinDays:0, tatMaxDays:45},
-  {key:'itAppSetup', label:'IT Application Setup', tatMinDays:0, tatMaxDays:42},
-  {key:'itInfraSetup', label:'IT Infra Setup', tatMinDays:0, tatMaxDays:43},
-  {key:'visiCooler', label:'Visi Cooler', tatMinDays:0, tatMaxDays:40},
-  {key:'llPendencies', label:'LL Pendencies', tatMinDays:0, tatMaxDays:25},
-  {key:'maintenanceVisit', label:'Maintenance Visit', tatMinDays:0, tatMaxDays:35},
-  {key:'maintenanceHandover', label:'Proposed Maintenance Handover', tatMinDays:0, tatMaxDays:47},
-  {key:'opsHandover', label:'Proposed Operations Handover', tatMinDays:0, tatMaxDays:48},
-  {key:'standardOpening', label:'Standard Opening Date', tatMinDays:0, tatMaxDays:50},
-  {key:'snagsSignOff', label:'Snags Sign-Off', tatMinDays:0, tatMaxDays:54},
-];
-// Design specs: one-time data capture, no TAT
+// Post-LOI Execution tasks — now an admin-editable, board-wide list (like Commercial
+// Terms' field list) rather than a hardcoded array, so Admin can add/remove/reorder
+// without a code change. defaultPostLoiTasks() only seeds a NEW board's starting list;
+// existing boards keep whatever's actually in board.postLoiTasks via migration.
+function defaultPostLoiTasks(){
+  return [
+    {key:'constructionStart', label:'Construction Start', tatMinDays:0, tatMaxDays:0},
+    {key:'equipmentIndent', label:"Equipment's Indent", tatMinDays:0, tatMaxDays:2},
+    {key:'storeTeamHiring', label:'Store Team Hiring', tatMinDays:0, tatMaxDays:20},
+    {key:'training', label:'Training', tatMinDays:0, tatMaxDays:40},
+    {key:'marketingPlan', label:'Marketing Plan', tatMinDays:0, tatMaxDays:42},
+    {key:'gstCertificate', label:'GST Certificate', tatMinDays:0, tatMaxDays:40},
+    {key:'licenses', label:'Licenses (Trade, FSSAI, Labour)', tatMinDays:0, tatMaxDays:40},
+    {key:'edcMachine', label:'EDC Machine', tatMinDays:0, tatMaxDays:45},
+    {key:'itAppSetup', label:'IT Application Setup', tatMinDays:0, tatMaxDays:42},
+    {key:'itInfraSetup', label:'IT Infra Setup', tatMinDays:0, tatMaxDays:43},
+    {key:'visiCooler', label:'Visi Cooler', tatMinDays:0, tatMaxDays:40},
+    {key:'llPendencies', label:'LL Pendencies', tatMinDays:0, tatMaxDays:25},
+    {key:'maintenanceVisit', label:'Maintenance Visit', tatMinDays:0, tatMaxDays:35},
+    {key:'maintenanceHandover', label:'Proposed Maintenance Handover', tatMinDays:0, tatMaxDays:47},
+    {key:'opsHandover', label:'Proposed Operations Handover', tatMinDays:0, tatMaxDays:48},
+    {key:'standardOpening', label:'Standard Opening Date', tatMinDays:0, tatMaxDays:50},
+    {key:'snagsSignOff', label:'Snags Sign-Off', tatMinDays:0, tatMaxDays:54},
+  ];
+}
+// Design specs: one-time data capture, no TAT — unchanged, not part of this rework
 const STAGE11_DESIGN = [
   {key:'totalCarpetArea', label:'Total Carpet Area (sqft)'},
   {key:'bohArea', label:'BOH Area (sqft)'},
@@ -610,22 +616,25 @@ const STAGE11_DESIGN = [
   {key:'signageSize', label:'Signage Size'},
   {key:'gfcDate', label:'GFC Date', dateTriplet:true},
 ];
-// Equipment delivery log — each item tracks tentative start / delivery date / actual date
-const STAGE11_DELIVERY = [
-  {key:'dgDelivery', label:'DG Delivery', dateTriplet:true},
-  {key:'servoUpsDelivery', label:'Servo & UPS Delivery', dateTriplet:true},
-  {key:'roInstallation', label:'RO Installation', dateTriplet:true},
-  {key:'signageInstallation', label:'Signage Installation', dateTriplet:true},
-  {key:'ssFabricationDelivery', label:'SS Fabrication Delivery', dateTriplet:true},
-  {key:'furnitureDelivery', label:'Furniture Delivery', dateTriplet:true},
-  {key:'chillerFreezerDelivery', label:'Chiller/Freezer Delivery', dateTriplet:true},
-  {key:'rationalOvenDelivery', label:'Rational Oven Delivery', dateTriplet:true},
-  {key:'hvacInstallation', label:'HVAC Installation', dateTriplet:true},
-  {key:'miscItems', label:'Misc Items (air curtain, pesto flash, fire cylinder, DMBs)', dateTriplet:true},
-  {key:'ac', label:'AC', dateTriplet:true},
-  {key:'cctv', label:'CCTV', dateTriplet:true},
-];
-// Final stage outcome fields: logged once the store actually opens
+// Equipment delivery log — now admin-editable like the tasks list above. Each item now
+// tracks just Tentative Delivery Date + Actual Delivery Date (was a 3-date pattern).
+function defaultPostLoiDelivery(){
+  return [
+    {key:'dgDelivery', label:'DG Delivery'},
+    {key:'servoUpsDelivery', label:'Servo & UPS Delivery'},
+    {key:'roInstallation', label:'RO Installation'},
+    {key:'signageInstallation', label:'Signage Installation'},
+    {key:'ssFabricationDelivery', label:'SS Fabrication Delivery'},
+    {key:'furnitureDelivery', label:'Furniture Delivery'},
+    {key:'chillerFreezerDelivery', label:'Chiller/Freezer Delivery'},
+    {key:'rationalOvenDelivery', label:'Rational Oven Delivery'},
+    {key:'hvacInstallation', label:'HVAC Installation'},
+    {key:'miscItems', label:'Misc Items (air curtain, pesto flash, fire cylinder, DMBs)'},
+    {key:'ac', label:'AC'},
+    {key:'cctv', label:'CCTV'},
+  ];
+}
+// Final stage outcome fields: logged once the store actually opens — unchanged
 const STAGE11_FINAL = [
   {key:'opening', label:'Store Opening', dateTriplet:true},
   {key:'actualConstructionDays', label:'Actual Construction Days', type:'number'},
@@ -749,6 +758,8 @@ function defaultBoard(){
     commercialTermsFields: defaultCommercialTermsFields(),
     restaurantCostHeaders: defaultRestaurantCostHeaders(),
     dropApprovers: [],
+    postLoiTasks: defaultPostLoiTasks(),
+    postLoiDelivery: defaultPostLoiDelivery(),
   };
 }
 
@@ -904,6 +915,8 @@ function migrateStageStructure(){
   if(!board.commercialTermsFields){ board.commercialTermsFields = defaultCommercialTermsFields(); changed = true; }
   if(!board.restaurantCostHeaders){ board.restaurantCostHeaders = defaultRestaurantCostHeaders(); changed = true; }
   if(!board.dropApprovers){ board.dropApprovers = []; changed = true; }
+  if(!board.postLoiTasks){ board.postLoiTasks = defaultPostLoiTasks(); changed = true; }
+  if(!board.postLoiDelivery){ board.postLoiDelivery = defaultPostLoiDelivery(); changed = true; }
   // Migrate each project's single fixedOpex number into the new itemized costLines
   // shape, under the SAME header id ('fixedOpex') the default list starts with — so
   // existing payback/ROI numbers don't change the moment this loads, just the storage
@@ -1026,6 +1039,27 @@ function migrateStageStructure(){
       if(st.id === 11 && s.stageData[11].tasks){
         Object.values(s.stageData[11].tasks).forEach(rec=>{
           if(!Array.isArray(rec.assignedTo)){ rec.assignedTo = rec.assignedTo ? [rec.assignedTo] : []; changed = true; }
+          // Old shape had tentativeStart/tentativeEnd + a separate done checkbox —
+          // folds into one tentativeCompletion date; "done" is now just "has an actual
+          // date", so anything checked-done-but-dateless correctly reverts to
+          // not-complete rather than silently keeping a state with no date behind it.
+          if(rec.tentativeCompletion === undefined){
+            rec.tentativeCompletion = rec.tentativeEnd || rec.tentativeStart || '';
+            delete rec.tentativeStart; delete rec.tentativeEnd; delete rec.done;
+            changed = true;
+          }
+        });
+      }
+      if(st.id === 11 && s.stageData[11].delivery){
+        Object.values(s.stageData[11].delivery).forEach(rec=>{
+          // Old shape was a 3-date triplet (tentativeStart/deliveryDate/actualDate) —
+          // deliveryDate is the closer match for "tentative delivery date", so that's
+          // what carries over; tentativeStart only fills in if deliveryDate was never set.
+          if(rec.tentativeDate === undefined){
+            rec.tentativeDate = rec.deliveryDate || rec.tentativeStart || '';
+            delete rec.tentativeStart; delete rec.deliveryDate;
+            changed = true;
+          }
         });
       }
       if(st.type === 'commercial-terms' && !s.stageData[st.id].commercialTerms){
@@ -1101,6 +1135,26 @@ function renderDateTriplet(prefix, key, label, rec){
     <div style="margin-top:8px;">
       <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Actual date</label>
       ${dateFieldWithClear(`${prefix}_${key}_actual`, rec.actualDate)}
+    </div>
+  </div>`;
+}
+// Clean 2-field version for anything that's genuinely just "when's it tentatively
+// happening" + "when did it actually happen" — used for Equipment Delivery specifically,
+// simpler than the 3-date triplet above since delivery items don't need a separate
+// "start" date distinct from the delivery date itself.
+function renderDatePair(prefix, key, label, rec, tentLabel, actualLabel){
+  rec = rec || {};
+  return `<div style="margin-bottom:14px;padding:10px;border:1px solid var(--line);border-radius:8px;">
+    <label style="font-weight:600;font-size:12.5px;display:block;margin-bottom:8px;">${escapeHtml(label)}</label>
+    <div class="mini-task-row">
+      <div style="flex:1;min-width:110px;">
+        <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">${escapeHtml(tentLabel)}</label>
+        ${dateFieldWithClear(`${prefix}_${key}_tent`, rec.tentativeDate)}
+      </div>
+      <div style="flex:1;min-width:110px;">
+        <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">${escapeHtml(actualLabel)}</label>
+        ${dateFieldWithClear(`${prefix}_${key}_actual`, rec.actualDate)}
+      </div>
     </div>
   </div>`;
 }
@@ -1261,7 +1315,7 @@ function recalculateDueDates(id){
 }
 
 // Admin-editable TAT overrides live in board.tatOverrides, keyed 'stage_<id>' or 'task_<key>'.
-// Falls back to the built-in default (from STAGES / STAGE11_TASKS) when no override is set.
+// Falls back to the built-in default (from STAGES / board.postLoiTasks) when no override is set.
 // Scoped per individual project, not shared globally — board.tatOverrides is
 // { siteId: { 'stage_<id>': {min,max}, 'task_<key>': {min,max} } }.
 // Single formatter for every TAT range shown anywhere in the app — always computed
@@ -1339,7 +1393,7 @@ function computeTargetOpening(s){
   if(d11.finalStage && d11.finalStage.actualOpening) return { label:'opened', value: d11.finalStage.actualOpening };
   if(d11.finalStage && d11.finalStage.revisedOpeningDate) return { label:'revised target', value: d11.finalStage.revisedOpeningDate };
   if(d11.startedAt){
-    const standardOpeningTat = STAGE11_TASKS.find(t=>t.key==='standardOpening').tatMaxDays;
+    const standardOpeningTat = board.postLoiTasks.find(t=>t.key==='standardOpening').tatMaxDays;
     return { label:'target opening', value: d11.startedAt + standardOpeningTat * 86400000 };
   }
   return null;
@@ -1445,9 +1499,9 @@ function findMyOpenAssignments(){
         results.push({ siteId: site.id, siteName: site.name, stageId: st.id, label: `${st.num} · ${st.title}` });
       }
       if(st.id === 11 && d.tasks){
-        STAGE11_TASKS.forEach(item=>{
+        board.postLoiTasks.forEach(item=>{
           const rec = d.tasks[item.key];
-          if(rec && (rec.assignedTo||[]).includes(me.id) && !rec.done){
+          if(rec && (rec.assignedTo||[]).includes(me.id) && !rec.actualDate){
             results.push({ siteId: site.id, siteName: site.name, stageId: 11, label: `11 · ${item.label}` });
           }
         });
@@ -2104,6 +2158,56 @@ function renderTemplatesView(){
         <div class="btn-row"><button class="btn primary" id="addCtFieldBtn">Add field at the end</button></div>
       </details>
     </div>`;
+
+    // Post-LOI Execution Tasks — same pattern, plus each task keeps its own TAT since
+    // that's how Admin already sets per-task deadlines (Admin → TAT Settings still
+    // shows whatever's in this list, keyed by id, so an added task's TAT is editable
+    // there right away).
+    const postLoiTasks = board.postLoiTasks || [];
+    html += `<div class="admin-section">
+      <details class="collapse-group" data-acc-key="pl-tasks">
+        <summary>Post-LOI Execution Tasks <span style="font-weight:400;color:var(--sub);font-size:11px;">${postLoiTasks.length}</span></summary>
+        <div class="sub" style="margin-top:0;">The task list for Post-LOI Execution. Add, remove, or reorder here — changes apply to every project going forward.</div>
+        ${postLoiTasks.map((t,i)=>`
+          <div class="admin-row" style="flex-wrap:wrap;">
+            <div style="flex:1 1 100%;">
+              <input data-pltask-edit-label="${t.key}" value="${escapeHtml(t.label)}" style="font-weight:600;margin-bottom:6px;">
+              <input type="number" data-pltask-edit-tatmin="${t.key}" value="${t.tatMinDays!==undefined?t.tatMinDays:''}" placeholder="TAT min" style="width:70px;font-size:11px;">
+              <input type="number" data-pltask-edit-tatmax="${t.key}" value="${t.tatMaxDays!==undefined?t.tatMaxDays:''}" placeholder="TAT max" style="width:70px;font-size:11px;">
+              <button class="btn ghost" data-pltask-move-up="${t.key}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===0?'disabled':''}>↑</button>
+              <button class="btn ghost" data-pltask-move-down="${t.key}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===postLoiTasks.length-1?'disabled':''}>↓</button>
+              <button class="remove-x" data-pltask-delete="${t.key}">✕</button>
+            </div>
+          </div>`).join('')}
+        <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+          <label>New task label</label><input id="newPlTaskLabel" placeholder="e.g. Signage Approval">
+        </div>
+        <div class="field"><label>TAT — min days</label><input id="newPlTaskTatMin" type="number" placeholder="e.g. 0"></div>
+        <div class="field"><label>TAT — max days</label><input id="newPlTaskTatMax" type="number" placeholder="e.g. 30"></div>
+        <div class="btn-row"><button class="btn primary" id="addPlTaskBtn">Add task at the end</button></div>
+      </details>
+    </div>`;
+
+    // Post-LOI Equipment Delivery items — no TAT here (matches existing behavior for
+    // this list), just the label.
+    const postLoiDelivery = board.postLoiDelivery || [];
+    html += `<div class="admin-section">
+      <details class="collapse-group" data-acc-key="pl-delivery">
+        <summary>Post-LOI Equipment Delivery Items <span style="font-weight:400;color:var(--sub);font-size:11px;">${postLoiDelivery.length}</span></summary>
+        <div class="sub" style="margin-top:0;">The equipment delivery list for Post-LOI Execution. Add, remove, or reorder here — changes apply to every project going forward.</div>
+        ${postLoiDelivery.map((t,i)=>`
+          <div class="admin-row">
+            <div class="admin-row-main" style="flex:1;"><input data-pldlv-edit-label="${t.key}" value="${escapeHtml(t.label)}"></div>
+            <button class="btn ghost" data-pldlv-move-up="${t.key}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===0?'disabled':''}>↑</button>
+            <button class="btn ghost" data-pldlv-move-down="${t.key}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===postLoiDelivery.length-1?'disabled':''}>↓</button>
+            <button class="remove-x" data-pldlv-delete="${t.key}">✕</button>
+          </div>`).join('')}
+        <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+          <label>New delivery item label</label><input id="newPlDlvLabel" placeholder="e.g. Water Purifier">
+        </div>
+        <div class="btn-row"><button class="btn primary" id="addPlDlvBtn">Add item at the end</button></div>
+      </details>
+    </div>`;
   }
 
   el.innerHTML = html;
@@ -2248,6 +2352,93 @@ function renderTemplatesView(){
     board.commercialTermsFields.push({ id: uid('ctf'), label, type, approvalRequired });
     document.getElementById('newCtFieldLabel').value = '';
     await saveCtFields();
+  });
+
+  const savePlLists = async ()=>{
+    try{ await saveBoard(); }
+    catch(e){ window.alert('Could not save — try again.'); }
+    render();
+  };
+  el.querySelectorAll('[data-pltask-edit-label]').forEach(inp=>{
+    inp.onchange = ()=>{ const t = board.postLoiTasks.find(x=>x.key===inp.dataset.pltaskEditLabel); if(t) t.label = inp.value.trim(); savePlLists(); };
+  });
+  el.querySelectorAll('[data-pltask-edit-tatmin]').forEach(inp=>{
+    inp.onchange = ()=>{ const t = board.postLoiTasks.find(x=>x.key===inp.dataset.pltaskEditTatmin); if(t) t.tatMinDays = parseInt(inp.value)||0; savePlLists(); };
+  });
+  el.querySelectorAll('[data-pltask-edit-tatmax]').forEach(inp=>{
+    inp.onchange = ()=>{ const t = board.postLoiTasks.find(x=>x.key===inp.dataset.pltaskEditTatmax); if(t) t.tatMaxDays = parseInt(inp.value)||1; savePlLists(); };
+  });
+  el.querySelectorAll('[data-pltask-move-up]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const arr = board.postLoiTasks;
+      const i = arr.findIndex(x=>x.key===btn.dataset.pltaskMoveUp);
+      if(i > 0){ [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; await savePlLists(); }
+    });
+  });
+  el.querySelectorAll('[data-pltask-move-down]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const arr = board.postLoiTasks;
+      const i = arr.findIndex(x=>x.key===btn.dataset.pltaskMoveDown);
+      if(i < arr.length-1){ [arr[i], arr[i+1]] = [arr[i+1], arr[i]]; await savePlLists(); }
+    });
+  });
+  el.querySelectorAll('[data-pltask-delete]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const arr = board.postLoiTasks;
+      const t = arr.find(x=>x.key===btn.dataset.pltaskDelete);
+      if(!t) return;
+      if(!window.confirm(`Remove "${t.label}"? Any progress already recorded on existing projects stays saved, it just won't show on the checklist anymore.`)) return;
+      const idx = arr.findIndex(x=>x.key===btn.dataset.pltaskDelete);
+      arr.splice(idx, 1);
+      await savePlLists();
+    });
+  });
+  const addPlTaskBtn = document.getElementById('addPlTaskBtn');
+  if(addPlTaskBtn) addPlTaskBtn.onclick = withClickLoading(addPlTaskBtn, 'Working…', async ()=>{
+    const label = document.getElementById('newPlTaskLabel').value.trim();
+    if(!label) return;
+    const tatMinDays = parseInt(document.getElementById('newPlTaskTatMin').value) || 0;
+    const tatMaxDays = parseInt(document.getElementById('newPlTaskTatMax').value) || 1;
+    board.postLoiTasks.push({ key: uid('plt'), label, tatMinDays, tatMaxDays });
+    document.getElementById('newPlTaskLabel').value = '';
+    await savePlLists();
+  });
+
+  el.querySelectorAll('[data-pldlv-edit-label]').forEach(inp=>{
+    inp.onchange = ()=>{ const t = board.postLoiDelivery.find(x=>x.key===inp.dataset.pldlvEditLabel); if(t) t.label = inp.value.trim(); savePlLists(); };
+  });
+  el.querySelectorAll('[data-pldlv-move-up]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const arr = board.postLoiDelivery;
+      const i = arr.findIndex(x=>x.key===btn.dataset.pldlvMoveUp);
+      if(i > 0){ [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; await savePlLists(); }
+    });
+  });
+  el.querySelectorAll('[data-pldlv-move-down]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const arr = board.postLoiDelivery;
+      const i = arr.findIndex(x=>x.key===btn.dataset.pldlvMoveDown);
+      if(i < arr.length-1){ [arr[i], arr[i+1]] = [arr[i+1], arr[i]]; await savePlLists(); }
+    });
+  });
+  el.querySelectorAll('[data-pldlv-delete]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const arr = board.postLoiDelivery;
+      const t = arr.find(x=>x.key===btn.dataset.pldlvDelete);
+      if(!t) return;
+      if(!window.confirm(`Remove "${t.label}"? Any progress already recorded on existing projects stays saved, it just won't show on the checklist anymore.`)) return;
+      const idx = arr.findIndex(x=>x.key===btn.dataset.pldlvDelete);
+      arr.splice(idx, 1);
+      await savePlLists();
+    });
+  });
+  const addPlDlvBtn = document.getElementById('addPlDlvBtn');
+  if(addPlDlvBtn) addPlDlvBtn.onclick = withClickLoading(addPlDlvBtn, 'Working…', async ()=>{
+    const label = document.getElementById('newPlDlvLabel').value.trim();
+    if(!label) return;
+    board.postLoiDelivery.push({ key: uid('pld'), label });
+    document.getElementById('newPlDlvLabel').value = '';
+    await savePlLists();
   });
 
   el.querySelectorAll('[data-create-project]').forEach(btn=>{
@@ -3041,38 +3232,34 @@ function openSheet(stageId){
     }
   } else if(st.type === 'checklist'){
     d.tasks = d.tasks || {}; d.design = d.design || {}; d.delivery = d.delivery || {}; d.finalStage = d.finalStage || {};
-    const doneCount = STAGE11_TASKS.filter(item=>d.tasks[item.key] && d.tasks[item.key].done).length;
-    const missingDateCount = STAGE11_TASKS.filter(item=>d.tasks[item.key] && d.tasks[item.key].done && !d.tasks[item.key].actualDate).length;
-    const overPlanCount = STAGE11_TASKS.filter(item=>{
+    const doneCount = board.postLoiTasks.filter(item=>d.tasks[item.key] && d.tasks[item.key].actualDate).length;
+    const overPlanCount = board.postLoiTasks.filter(item=>{
       const rec = d.tasks[item.key];
-      if(!rec || !rec.tentativeStart || !rec.tentativeEnd) return false;
+      if(!rec || !rec.tentativeCompletion || !d.startedAt) return false;
       const tat = effectiveTat(activeStore, 'task_'+item.key, item.tatMinDays, item.tatMaxDays);
-      const plannedDays = Math.round((new Date(rec.tentativeEnd) - new Date(rec.tentativeStart)) / 86400000);
+      const plannedDays = Math.round((new Date(rec.tentativeCompletion) - d.startedAt) / 86400000);
       return plannedDays > tat.max;
     }).length;
 
-    inner += `<div class="progress-line" style="font-weight:700;color:var(--ink);">${doneCount} / ${STAGE11_TASKS.length} execution tasks complete</div>`;
-    if(missingDateCount > 0){
-      inner += `<div class="warn">⚠ ${missingDateCount} completed task${missingDateCount>1?'s':''} missing an actual completion date — project team should record the real date, not just tick the box.</div>`;
-    }
+    inner += `<div class="progress-line" style="font-weight:700;color:var(--ink);">${doneCount} / ${board.postLoiTasks.length} execution tasks complete</div>`;
     if(overPlanCount > 0){
-      inner += `<div class="warn">⚠ ${overPlanCount} task${overPlanCount>1?'s have':' has'} a planned duration (tentative start to end) longer than its admin-set TAT.</div>`;
+      inner += `<div class="warn">⚠ ${overPlanCount} task${overPlanCount>1?'s have':' has'} a tentative completion date beyond its admin-set TAT.</div>`;
     }
 
     inner += `<details class="collapse-group" open>
-      <summary>Execution Tasks (${STAGE11_TASKS.length})</summary>`;
-    STAGE11_TASKS.forEach(item=>{
-      const rec = d.tasks[item.key] || { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
+      <summary>Execution Tasks (${board.postLoiTasks.length})</summary>`;
+    board.postLoiTasks.forEach(item=>{
+      const rec = d.tasks[item.key] || { actualDate:'', tentativeCompletion:'', assignedTo:[], by:'', at:0 };
+      const done = !!rec.actualDate;
       const tat = effectiveTat(activeStore, 'task_'+item.key, item.tatMinDays, item.tatMaxDays);
       const it = itemTiming(d.startedAt, item.tatMinDays, item.tatMaxDays, item.key, activeStore);
-      const slaLabel = it ? (it.isOverdue ? `${it.overdueDays}d over ${tat.min}-${tat.max}d TAT` : `Day ${it.elapsedDays} of ${tat.min}-${tat.max}d TAT`) : `${tat.min}-${tat.max}d TAT`;
-      const missingDate = rec.done && !rec.actualDate;
+      const slaLabel = it ? (it.isOverdue ? `${it.overdueDays}d over ${fmtTatRange(tat.min, tat.max)}` : `Day ${it.elapsedDays} of ${fmtTatRange(tat.min, tat.max)}`) : fmtTatRange(tat.min, tat.max);
       let plannedDays = null;
-      if(rec.tentativeStart && rec.tentativeEnd){
-        plannedDays = Math.round((new Date(rec.tentativeEnd) - new Date(rec.tentativeStart)) / 86400000);
+      if(rec.tentativeCompletion && d.startedAt){
+        plannedDays = Math.round((new Date(rec.tentativeCompletion) - d.startedAt) / 86400000);
       }
       const overPlan = plannedDays !== null && plannedDays > tat.max;
-      inner += `<div class="mini-task-card ${rec.done?'done':''} ${(it&&it.isOverdue&&!rec.done)||overPlan?'overdue-card':''}">
+      inner += `<div class="mini-task-card ${done?'done':''} ${(it&&it.isOverdue&&!done)||overPlan?'overdue-card':''}">
         <div class="mini-task-top">
           <div class="mini-task-label">${escapeHtml(item.label)}</div>
           <div class="mini-task-tat ${it&&it.isOverdue?'overdue-dur':''}">${slaLabel}</div>
@@ -3099,21 +3286,16 @@ function openSheet(stageId){
         </div>
         <div class="mini-task-row">
           <div style="flex:1;min-width:130px;">
-            <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Tentative start</label>
-            ${dateFieldWithClear(`task_tstart_${item.key}`, rec.tentativeStart)}
+            <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Tentative completion</label>
+            ${dateFieldWithClear(`task_tcomplete_${item.key}`, rec.tentativeCompletion)}
           </div>
           <div style="flex:1;min-width:130px;">
-            <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Tentative end</label>
-            ${dateFieldWithClear(`task_tend_${item.key}`, rec.tentativeEnd)}
+            <label style="display:block;font-size:10px;color:var(--sub);margin-bottom:3px;">Actual completion</label>
+            ${dateFieldWithClear(`task_actual_${item.key}`, rec.actualDate)}
           </div>
         </div>
-        ${overPlan ? `<div class="mini-task-flag">⚠ Planned ${plannedDays}d — exceeds ${tat.max}d TAT by ${plannedDays-tat.max}d</div>` : ''}
-        <div class="mini-task-row">
-          <label class="mini-task-check"><input type="checkbox" data-task-done="${item.key}" ${rec.done?'checked':''}> Complete</label>
-          <div style="flex:1;">${dateFieldWithClear(`task_actual_${item.key}`, rec.actualDate)}</div>
-        </div>
-        ${missingDate ? `<div class="mini-task-flag">⚠ No date recorded</div>` : ''}
-        ${rec.done ? `<div class="approver-stamp">${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}
+        ${overPlan ? `<div class="mini-task-flag">⚠ Tentative completion is ${plannedDays}d out — exceeds ${tat.max}d TAT by ${plannedDays-tat.max}d</div>` : ''}
+        ${done ? `<div class="approver-stamp">${escapeHtml(rec.by)} · ${timeAgo(rec.at)}</div>` : ''}
       </div>`;
     });
     inner += `</details>`;
@@ -3131,10 +3313,10 @@ function openSheet(stageId){
     inner += `</details>`;
 
     inner += `<details class="collapse-group">
-      <summary>Equipment Delivery Schedule (${STAGE11_DELIVERY.length})</summary>
-      <div class="progress-line" style="margin-top:0;">No TAT — tracked as tentative start / delivery date / actual date</div>`;
-    STAGE11_DELIVERY.forEach(f=>{
-      inner += renderDateTriplet('dlv', f.key, f.label, d.delivery[f.key]);
+      <summary>Equipment Delivery Schedule (${board.postLoiDelivery.length})</summary>
+      <div class="progress-line" style="margin-top:0;">No TAT — tentative delivery date and actual delivery date</div>`;
+    board.postLoiDelivery.forEach(f=>{
+      inner += renderDatePair('dlv', f.key, f.label, d.delivery[f.key], 'Tentative delivery date', 'Actual delivery date');
     });
     inner += `</details>`;
 
@@ -3393,53 +3575,34 @@ function wireSheetActions(st, s, d){
     render(); openSheet(st.id);
   });
 
-  document.querySelectorAll('[data-task-done]').forEach(chk=>{
-    chk.onchange = async ()=>{
+  board.postLoiTasks.forEach(item=>{
+    const actualInp = document.getElementById(`task_actual_${item.key}`);
+    if(actualInp) actualInp.onchange = async ()=>{
       const who = getWho();
-      const key = chk.dataset.taskDone;
       d.tasks = d.tasks || {};
-      const existing = d.tasks[key] || { actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[] };
-      const dateInput = document.getElementById(`task_actual_${key}`);
-      d.tasks[key] = {
-        ...existing,
-        done: chk.checked,
-        actualDate: dateInput ? dateInput.value : existing.actualDate,
-        by: who, at: Date.now(),
-      };
-      const allDone = STAGE11_TASKS.every(item=>d.tasks[item.key] && d.tasks[item.key].done);
+      if(!d.tasks[item.key]) d.tasks[item.key] = { actualDate:'', tentativeCompletion:'', assignedTo:[], by:'', at:0 };
+      d.tasks[item.key].actualDate = actualInp.value;
+      d.tasks[item.key].by = who; d.tasks[item.key].at = Date.now();
+      // Completion is now purely "does this task have an actual date" — no separate
+      // checkbox to keep in sync, so this can't drift out of step with the date itself.
+      const allDone = board.postLoiTasks.every(t=>d.tasks[t.key] && d.tasks[t.key].actualDate);
       if(allDone && d.status !== 'done'){
         d.status = 'done'; d.updatedBy = who; d.updatedAt = Date.now();
         s.log.push({stageId:st.id, text:`All execution tasks complete, confirmed by ${who}`, at: Date.now()});
       } else if(!allDone && d.status === 'done'){
-        d.status = 'active'; // a task got un-checked after completion
+        d.status = 'active'; // a task's actual date got cleared after completion
       }
       await saveBoard(); render(); openSheet(st.id);
     };
-  });
-  STAGE11_TASKS.forEach(item=>{
-    const actualInp = document.getElementById(`task_actual_${item.key}`);
-    if(actualInp) actualInp.onchange = async ()=>{
+    const tcompleteInp = document.getElementById(`task_tcomplete_${item.key}`);
+    if(tcompleteInp) tcompleteInp.onchange = async ()=>{
       d.tasks = d.tasks || {};
-      if(!d.tasks[item.key]) d.tasks[item.key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
-      d.tasks[item.key].actualDate = actualInp.value;
-      await saveBoard(); render(); openSheet(st.id);
-    };
-    const tstartInp = document.getElementById(`task_tstart_${item.key}`);
-    if(tstartInp) tstartInp.onchange = async ()=>{
-      d.tasks = d.tasks || {};
-      if(!d.tasks[item.key]) d.tasks[item.key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
-      d.tasks[item.key].tentativeStart = tstartInp.value;
-      await saveBoard(); render(); openSheet(st.id);
-    };
-    const tendInp = document.getElementById(`task_tend_${item.key}`);
-    if(tendInp) tendInp.onchange = async ()=>{
-      d.tasks = d.tasks || {};
-      if(!d.tasks[item.key]) d.tasks[item.key] = { done:false, actualDate:'', tentativeStart:'', tentativeEnd:'', assignedTo:[], by:'', at:0 };
-      d.tasks[item.key].tentativeEnd = tendInp.value;
+      if(!d.tasks[item.key]) d.tasks[item.key] = { actualDate:'', tentativeCompletion:'', assignedTo:[], by:'', at:0 };
+      d.tasks[item.key].tentativeCompletion = tcompleteInp.value;
       await saveBoard(); render(); openSheet(st.id);
     };
   });
-  STAGE11_TASKS.forEach(item=>{
+  board.postLoiTasks.forEach(item=>{
     const key = item.key;
     const assignInput = document.getElementById(`taskAssign_${key}`);
     if(assignInput) assignInput.onchange = async ()=>{
@@ -3485,11 +3648,18 @@ function wireSheetActions(st, s, d){
         actualDate: g(`${prefix}_${key}_actual`),
       };
     }
+    function readPair(prefix, key){
+      const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+      return {
+        tentativeDate: g(`${prefix}_${key}_tent`),
+        actualDate: g(`${prefix}_${key}_actual`),
+      };
+    }
     STAGE11_DESIGN.forEach(f=>{
       d.design[f.key] = f.dateTriplet ? readTriplet('dsn', f.key) : document.getElementById('dsn_'+f.key).value.trim();
     });
-    STAGE11_DELIVERY.forEach(f=>{
-      d.delivery[f.key] = readTriplet('dlv', f.key);
+    board.postLoiDelivery.forEach(f=>{
+      d.delivery[f.key] = readPair('dlv', f.key);
     });
     STAGE11_FINAL.forEach(f=>{
       d.finalStage[f.key] = f.dateTriplet ? readTriplet('fin', f.key) : document.getElementById('fin_'+f.key).value.trim();
@@ -3852,7 +4022,7 @@ function renderAdmin(){
             </div>`;
           }).join('')}
           <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Post-LOI Execution tasks</div>
-          ${STAGE11_TASKS.map(item=>{
+          ${board.postLoiTasks.map(item=>{
             const ov = (board.tatOverrides[slaEditorSiteId] && board.tatOverrides[slaEditorSiteId]['task_'+item.key]) || {};
             return `
             <div class="admin-row">
