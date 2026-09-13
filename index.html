@@ -4092,6 +4092,17 @@ function renderAdmin(){
     </div>
 
     <div class="admin-section">
+      <h3>Gmail Token</h3>
+      <div class="sub">Reply-capture (pollGmailReplies) uses a Gmail OAuth token that expires on a hard 7-day timer while the app stays in "Testing" mode with Google — unrelated to anything in the app itself. Click the button below right after you refresh it, and you'll get an email reminder starting 2 days before it's due to expire again.</div>
+      ${board.gmailTokenRefreshedAt ? (()=>{
+        const daysSince = Math.floor((Date.now() - board.gmailTokenRefreshedAt) / 86400000);
+        const daysLeft = Math.max(0, 7 - daysSince);
+        return `<div class="admin-row-sub" style="padding:6px 0;">Last refreshed ${fmtDate(board.gmailTokenRefreshedAt)} — ${daysLeft > 0 ? `~${daysLeft} day${daysLeft===1?'':'s'} left before it's due to expire again` : 'likely expired by now'}</div>`;
+      })() : `<div class="admin-row-sub" style="padding:6px 0;">Nothing recorded yet.</div>`}
+      <div class="btn-row"><button class="btn primary" id="markGmailTokenRefreshedBtn">Mark as refreshed today</button></div>
+    </div>
+
+    <div class="admin-section">
       <h3>Signed-in users</h3>
       <div class="sub">Everyone who has logged in with an email to update this board.</div>
       ${board.users.length === 0 ? `<div class="admin-row-sub" style="padding:8px 0;">No one has signed in yet.</div>` :
@@ -4218,6 +4229,12 @@ function renderAdmin(){
         board.tatOverrides[slaEditorSiteId][key] = { min: parseInt(minVal), max: parseInt(maxVal) };
       }
     });
+    await saveBoard(); render();
+  });
+
+  const markGmailTokenRefreshedBtn = document.getElementById('markGmailTokenRefreshedBtn');
+  if(markGmailTokenRefreshedBtn) markGmailTokenRefreshedBtn.onclick = withClickLoading(markGmailTokenRefreshedBtn, 'Working…', async ()=>{
+    board.gmailTokenRefreshedAt = Date.now();
     await saveBoard(); render();
   });
 
