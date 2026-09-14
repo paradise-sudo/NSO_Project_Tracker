@@ -520,6 +520,7 @@ const addDropApproverFn = functionsClient.httpsCallable('addDropApprover');
 const removeDropApproverFn = functionsClient.httpsCallable('removeDropApprover');
 const requestDropProjectFn = functionsClient.httpsCallable('requestDropProject');
 const respondToDropRequestFn = functionsClient.httpsCallable('respondToDropRequest');
+const reviveProjectFn = functionsClient.httpsCallable('reviveProject');
 const resendApprovalNotificationFn = functionsClient.httpsCallable('resendApprovalNotification');
 const approveCommercialTermsLineFn = functionsClient.httpsCallable('approveCommercialTermsLine');
 const storage = firebase.storage();
@@ -2805,6 +2806,20 @@ function renderSummary(){
         if(res && res.data){ s.dropRequest = res.data.dropRequest; }
         render();
       }catch(e){ window.alert(e.message || 'Could not submit the drop request — try again.'); }
+    });
+  } else if(site.status === 'dropped' && isAdmin()){
+    const anchorEl = document.getElementById('closeProjectRow') || el;
+    anchorEl.insertAdjacentHTML('afterend', `<div id="dropProjectRow" style="padding:0 14px 14px;">
+      <button class="btn ghost" id="reviveProjectBtn" style="width:100%;">Revive Project</button>
+    </div>`);
+    const reviveProjectBtn = document.getElementById('reviveProjectBtn');
+    reviveProjectBtn.onclick = withClickLoading(reviveProjectBtn, 'Working…', async ()=>{
+      if(!window.confirm(`Revive "${site.name}"? It goes back to active status — nothing about its history changes, the drop stays on record.`)) return;
+      try{
+        const res = await reviveProjectFn({ siteId: site.id });
+        if(res && res.data){ site.status = res.data.status; s.dropRequest = res.data.dropRequest; }
+        render();
+      }catch(e){ window.alert(e.message || 'Could not revive this project — try again.'); }
     });
   }
 
