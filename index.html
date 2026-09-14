@@ -1259,8 +1259,13 @@ function calcProjection(f){
     y[yi].rev += revenue; y[yi].ebitda += ebitda;
   }
   const totalEBITDA = y[0].ebitda + y[1].ebitda + y[2].ebitda;
+  const totalRev = y[0].rev + y[1].rev + y[2].rev;
   const roi3yr = capex>0 ? ((totalEBITDA - capex)/capex*100) : 0;
-  return { paybackMonth, y, totalEBITDA, roi3yr };
+  // EBITDA margin — per year and overall. Guarded against divide-by-zero for a year
+  // with no revenue yet (e.g. capex entered but nothing else filled in).
+  y.forEach(yy=>{ yy.ebitdaPct = yy.rev > 0 ? (yy.ebitda / yy.rev * 100) : 0; });
+  const totalEbitdaPct = totalRev > 0 ? (totalEBITDA / totalRev * 100) : 0;
+  return { paybackMonth, y, totalEBITDA, roi3yr, totalEbitdaPct };
 }
 
 function recompute(id){
@@ -3483,15 +3488,22 @@ function renderFxResults(f){
       Payback: ${r.paybackMonth ? r.paybackMonth+' months' : 'beyond 36 months'} · 3-Yr ROI: ${r.roi3yr.toFixed(0)}%
     </div>
     <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;">
-      <tr style="color:var(--sub);text-align:left;"><th style="padding:4px 0;">Year</th><th>Revenue</th><th>EBITDA</th></tr>
+      <tr style="color:var(--sub);text-align:left;"><th style="padding:4px 0;">Year</th><th>Revenue</th><th>EBITDA</th><th>EBITDA %</th></tr>
       ${r.y.map((yy,i)=>`<tr style="border-top:1px solid var(--line);">
-        <td style="padding:5px 0;font-weight:600;">Y${i+1}</td><td>${fmtINR(yy.rev)}</td><td>${fmtINR(yy.ebitda)}</td>
+        <td style="padding:5px 0;font-weight:600;">Y${i+1}</td><td>${fmtINR(yy.rev)}</td><td>${fmtINR(yy.ebitda)}</td><td>${yy.ebitdaPct.toFixed(1)}%</td>
       </tr>`).join('')}
       <tr style="border-top:1px solid var(--line);font-weight:700;">
-        <td style="padding:5px 0;">Total</td><td>${fmtINR(r.y[0].rev+r.y[1].rev+r.y[2].rev)}</td><td>${fmtINR(r.totalEBITDA)}</td>
+        <td style="padding:5px 0;">Total</td><td>${fmtINR(r.y[0].rev+r.y[1].rev+r.y[2].rev)}</td><td>${fmtINR(r.totalEBITDA)}</td><td>${r.totalEbitdaPct.toFixed(1)}%</td>
       </tr>
     </table>
   `;
+  // Persisted so the P&L approval email can show the real calculated margin without
+  // the backend needing to replicate this whole ramp-curve calculation independently —
+  // one source of truth (this function), read wherever the number is needed.
+  f.calcResults = {
+    paybackMonth: r.paybackMonth, roi3yr: r.roi3yr, totalEbitdaPct: r.totalEbitdaPct,
+    yearlyEbitdaPct: r.y.map(yy=>yy.ebitdaPct), calculatedAt: Date.now(),
+  };
 }
 
 function wireSheetActions(st, s, d){
@@ -3606,7 +3618,18 @@ function wireSheetActions(st, s, d){
 
 
   const calcBtn = document.getElementById('calcBtn');
-  if(calcBtn) calcBtn.onclick = ()=> renderFxResults(readFxInputs());
+  if(calcBtn) calcBtn.onclick = withClickLoading(calcBtn, 'Calculating…', async ()=>{
+    const inputs = readFxInputs();
+    renderFxResults(inputs);
+    // Persist just the calculated summary (not the full re-read inputs — those only
+    // save via the explicit Save buttons) so the P&L approval email can show the real
+    // margin without the backend re-deriving it independently.
+    if(inputs.calcResults){
+      d.financials = d.financials || {};
+      d.financials.calcResults = inputs.calcResults;
+      await saveBoard();
+    }
+  });
 
   const addCostLineBtn = document.getElementById('addCostLineBtn');
   if(addCostLineBtn) addCostLineBtn.onclick = withClickLoading(addCostLineBtn, 'Working…', async ()=>{
