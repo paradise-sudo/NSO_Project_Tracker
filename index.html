@@ -520,6 +520,7 @@ const addDropApproverFn = functionsClient.httpsCallable('addDropApprover');
 const removeDropApproverFn = functionsClient.httpsCallable('removeDropApprover');
 const requestDropProjectFn = functionsClient.httpsCallable('requestDropProject');
 const respondToDropRequestFn = functionsClient.httpsCallable('respondToDropRequest');
+const resendApprovalNotificationFn = functionsClient.httpsCallable('resendApprovalNotification');
 const approveCommercialTermsLineFn = functionsClient.httpsCallable('approveCommercialTermsLine');
 const storage = firebase.storage();
 const BOARD_DOC = db.collection('nso').doc('board');
@@ -4057,6 +4058,16 @@ function renderAdmin(){
             <option value="">— add an approver —</option>
             ${eligible.filter(p=>!current.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${levelLabel(p.level)})</option>`).join('')}
           </select>
+          ${currentPeople.length ? `
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <select id="resendProjectPicker_${st.id}" style="flex:1;font-size:12px;">
+              <option value="">— resend notification for project —</option>
+              ${board.sites.filter(s=>!s.deletedAt).map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
+            </select>
+            <button class="btn ghost" data-resend-approval="${st.id}" style="width:auto;font-size:12px;padding:8px 12px;white-space:nowrap;">Resend</button>
+          </div>
+          <div class="admin-row-sub" style="padding-top:4px;">For stages that were already active before this notification existed — sends the same email everyone above would get.</div>
+          ` : ''}
         </div>`;
       }).join('')}
     </div>
@@ -4470,6 +4481,20 @@ function renderAdmin(){
         if(res && res.data) board.stageApprovers[stageId] = res.data.approvers;
         render();
       }catch(e){ window.alert(e.message || 'Could not remove that approver — try again.'); }
+    });
+  });
+
+  el.querySelectorAll('[data-resend-approval]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Sending…', async ()=>{
+      const stageId = parseInt(btn.dataset.resendApproval);
+      const picker = document.getElementById(`resendProjectPicker_${stageId}`);
+      const siteId = picker ? picker.value : '';
+      if(!siteId){ window.alert('Pick a project first.'); return; }
+      try{
+        const res = await resendApprovalNotificationFn({ siteId, stageId });
+        const n = (res && res.data && res.data.sentCount) || 0;
+        window.alert(n ? `Sent to ${n} approver${n>1?'s':''}.` : 'No approvers had a valid email on file.');
+      }catch(e){ window.alert(e.message || 'Could not resend — try again.'); }
     });
   });
 
