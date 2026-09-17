@@ -2007,6 +2007,16 @@ function canSeeSite(site){
   if(site.ownerId === currentUser.email) return true;
   const me = findMyStakeholder();
   if(!me) return false;
+  // A configured approver (stage-level or Drop Request) needs visibility too — this was
+  // missing entirely before, since the approver system was built well after this
+  // function: someone who's ONLY an approver and never directly assigned to a task
+  // would see nothing at all, unable to do the one thing they were added for.
+  if((board.dropApprovers||[]).includes(me.id)) return true;
+  if(board.stageApprovers){
+    for(const stageId in board.stageApprovers){
+      if((board.stageApprovers[stageId]||[]).includes(me.id)) return true;
+    }
+  }
   const s = board.siteData[site.id];
   if(!s) return false;
   return STAGES.some(st=>{
