@@ -34,7 +34,7 @@
   }
   .wrap{max-width:640px;margin:0 auto;padding:0 0 90px;}
   header{
-    position:sticky;top:0;z-index:10;background:var(--maroon);
+    position:sticky;top:0;z-index:35;background:var(--maroon);
     padding:14px 16px 0;
   }
   .brand-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
@@ -4541,19 +4541,20 @@ function renderAdmin(){
   });
 }
 
-document.getElementById('navTracker').onclick = ()=>{ currentView='tracker'; activePage='project-flow'; trackerSubView='list'; render(); };
+document.getElementById('navTracker').onclick = ()=>{ closeSheet(); currentView='tracker'; activePage='project-flow'; trackerSubView='list'; render(); };
 document.getElementById('navExecution').onclick = ()=>{
+  closeSheet();
   currentView='tracker'; activePage='execution';
   trackerSubView = activeStore ? 'detail' : 'list'; // stay on whichever project's already open, same project across both tabs
   render();
 };
-document.getElementById('navDashboard').onclick = ()=>{ currentView='dashboard'; render(); };
-document.getElementById('backToProjectListBtn').onclick = ()=>{ trackerSubView='list'; render(); };
-document.getElementById('navMyTasks').onclick = ()=>{ currentView='myTasks'; render(); };
-document.getElementById('navFiles').onclick = ()=>{ currentView='files'; render(); };
-document.getElementById('navCapex').onclick = ()=>{ currentView='capex'; render(); };
-document.getElementById('navTemplates').onclick = ()=>{ currentView='templates'; render(); };
-document.getElementById('navAdmin').onclick = ()=>{ if(isAdmin()){ currentView='admin'; render(); } };
+document.getElementById('navDashboard').onclick = ()=>{ closeSheet(); currentView='dashboard'; render(); };
+document.getElementById('backToProjectListBtn').onclick = ()=>{ closeSheet(); trackerSubView='list'; render(); };
+document.getElementById('navMyTasks').onclick = ()=>{ closeSheet(); currentView='myTasks'; render(); };
+document.getElementById('navFiles').onclick = ()=>{ closeSheet(); currentView='files'; render(); };
+document.getElementById('navCapex').onclick = ()=>{ closeSheet(); currentView='capex'; render(); };
+document.getElementById('navTemplates').onclick = ()=>{ closeSheet(); currentView='templates'; render(); };
+document.getElementById('navAdmin').onclick = ()=>{ if(isAdmin()){ closeSheet(); currentView='admin'; render(); } };
 
 // ---------- Log in / Sign up / Forgot password (Cloud Functions) + Firestore sync ----------
 // Log in = plain email + password, no OTP. Sign up and Forgot password share the same
