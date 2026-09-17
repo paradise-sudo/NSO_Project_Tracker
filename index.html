@@ -2336,7 +2336,13 @@ function renderTemplatesView(){
     const page = document.getElementById('newStagePage').value;
     const tatMinDays = parseInt(document.getElementById('newStageTatMin').value) || 0;
     const tatMaxDays = parseInt(document.getElementById('newStageTatMax').value) || 7;
-    const newId = STAGES.length ? Math.max(...STAGES.map(x=>x.id)) + 1 : 1;
+    // Guaranteed unique, not just "highest current ID + 1" — that alone can collide if
+    // two adds happen close together against a stale STAGES snapshot (exactly what
+    // happened on one live board: two different stages ended up sharing an id, and
+    // clicking either one opened whichever came first in the array). This explicitly
+    // verifies the candidate is actually free before using it.
+    let newId = STAGES.length ? Math.max(...STAGES.map(x=>x.id)) + 1 : 1;
+    while(STAGES.some(x=>x.id === newId)) newId++;
     // Sensible starting defaults based on type — same mapping used when migrating
     // existing stages — admin can still flip either checkbox right after creating it.
     let requiresAssignment = true, requiresApproval = false;
