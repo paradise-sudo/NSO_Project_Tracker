@@ -177,6 +177,11 @@
     width:100%;max-width:640px;background:#fff;border-radius:16px 16px 0 0;padding:20px 18px 26px;
     max-height:88vh;overflow-y:auto;
   }
+  .sticky-close-x{
+    position:sticky;top:0;float:right;margin:-4px -4px 0 12px;
+    width:32px;height:32px;border-radius:50%;border:none;background:var(--card,#F4EFE6);
+    color:var(--ink,#2B1A12);font-size:15px;line-height:1;cursor:pointer;z-index:5;
+  }
   .sheet-badge{margin-bottom:6px;}
   .sheet h2{font-family:'Inter',sans-serif;font-size:19px;margin:4px 0 6px;}
   .sheet .meta{font-size:12.5px;color:var(--sub);margin-bottom:10px;}
@@ -3114,6 +3119,7 @@ function openSheet(stageId){
   const body = document.getElementById('sheetBody');
 
   let inner = `
+    <button id="stickyCloseBtn" class="sticky-close-x" aria-label="Close">✕</button>
     <span class="stage-badge ${st.type} sheet-badge">${st.type}</span>
     <h2>${st.num} · ${escapeHtml(st.title)}</h2>
     <div class="meta">${escapeHtml(st.owner)} · ${fmtTatRange(effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays).min, effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays).max)} TAT</div>
@@ -3462,6 +3468,7 @@ function openSheet(stageId){
 
   body.innerHTML = inner;
   backdrop.classList.add('open');
+  document.getElementById('stickyCloseBtn').onclick = closeSheet;
   wireSheetActions(st, s, d);
   if(st.id === 3) renderFxResults(d.financials);
 }
