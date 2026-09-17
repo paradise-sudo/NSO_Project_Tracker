@@ -1792,24 +1792,26 @@ function renderCapexView(){
   </div>`;
 
   if(isAdmin()){
+    // Compact chip-list + search-to-add, same pattern used for task assignment and
+    // approvers elsewhere — replaces a flat checkbox-per-stakeholder list (unreadable
+    // once there are 30+ people) with just who's actually assigned, plus one search box.
+    const roleBlock = (roleLabel, sub, ids, dataAttr, pickerId) => {
+      const current = ids.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
+      return `<div class="field">
+        <label>${roleLabel}</label>
+        ${sub ? `<div class="admin-row-sub" style="padding:0 0 6px;">${sub}</div>` : ''}
+        ${current.length === 0 ? `<div class="admin-row-sub" style="padding:4px 0;">Nobody yet.</div>` : current.map(p=>`
+          <div class="admin-row"><div class="admin-row-main">${escapeHtml(p.name)}</div><button class="remove-x" data-${dataAttr}-remove="${p.id}">✕</button></div>
+        `).join('')}
+        ${personPickerHtml(pickerId, board.stakeholders.filter(p=>!ids.includes(p.id)), '+ search and add someone')}
+      </div>`;
+    };
     html += `<div class="admin-section">
       <h3>Assign people</h3>
       <div class="sub">Anyone assigned here can see and edit this tab, regardless of the cost list below.</div>
-      <div class="field"><label>Tentative CapEx builder(s)</label>
-        ${board.stakeholders.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;">
-          <input type="checkbox" data-capex-tent-assignee="${p.id}" ${c.tentativeAssignees.includes(p.id)?'checked':''} style="width:auto;"> ${escapeHtml(p.name)}
-        </label>`).join('')}
-      </div>
-      <div class="field"><label>Actual cost updater(s)</label>
-        ${board.stakeholders.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;">
-          <input type="checkbox" data-capex-actual-assignee="${p.id}" ${c.actualAssignees.includes(p.id)?'checked':''} style="width:auto;"> ${escapeHtml(p.name)}
-        </label>`).join('')}
-      </div>
-      <div class="field"><label>Also give cost visibility to (beyond assignees above)</label>
-        ${board.stakeholders.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;">
-          <input type="checkbox" data-capex-visible="${p.id}" ${c.costVisibleTo.includes(p.id)?'checked':''} style="width:auto;"> ${escapeHtml(p.name)}
-        </label>`).join('')}
-      </div>
+      ${roleBlock('Tentative CapEx builder(s)', '', c.tentativeAssignees, 'capex-tent', 'capexTentPicker')}
+      ${roleBlock('Actual cost updater(s)', '', c.actualAssignees, 'capex-actual', 'capexActualPicker')}
+      ${roleBlock('Also give cost visibility to', 'Beyond the assignees above.', c.costVisibleTo, 'capex-visible', 'capexVisiblePicker')}
     </div>`;
   }
 
@@ -1866,30 +1868,28 @@ function renderCapexView(){
 
   el.innerHTML = html;
 
-  el.querySelectorAll('[data-capex-tent-assignee]').forEach(chk=>{
-    chk.onchange = async ()=>{
-      const id = chk.dataset.capexTentAssignee;
-      if(chk.checked){ if(!c.tentativeAssignees.includes(id)) c.tentativeAssignees.push(id); }
-      else{ c.tentativeAssignees = c.tentativeAssignees.filter(x=>x!==id); }
+  // Chip-list remove + search-to-add, replacing the old checkbox-per-stakeholder wiring
+  const wireRole = (removeAttr, listRef, pickerId) => {
+    el.querySelectorAll(`[data-${removeAttr}-remove]`).forEach(btn=>{
+      btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+        const id = btn.getAttribute(`data-${removeAttr}-remove`);
+        const arr = listRef();
+        const idx = arr.indexOf(id);
+        if(idx !== -1) arr.splice(idx, 1);
+        await saveBoard(); render();
+      });
+    });
+    const picker = document.getElementById(pickerId);
+    if(picker) picker.addEventListener('change', async ()=>{
+      const selectedId = personPickerSelectedId(pickerId, board.stakeholders.filter(p=>!listRef().includes(p.id)));
+      if(!selectedId) return;
+      listRef().push(selectedId);
       await saveBoard(); render();
-    };
-  });
-  el.querySelectorAll('[data-capex-actual-assignee]').forEach(chk=>{
-    chk.onchange = async ()=>{
-      const id = chk.dataset.capexActualAssignee;
-      if(chk.checked){ if(!c.actualAssignees.includes(id)) c.actualAssignees.push(id); }
-      else{ c.actualAssignees = c.actualAssignees.filter(x=>x!==id); }
-      await saveBoard(); render();
-    };
-  });
-  el.querySelectorAll('[data-capex-visible]').forEach(chk=>{
-    chk.onchange = async ()=>{
-      const id = chk.dataset.capexVisible;
-      if(chk.checked){ if(!c.costVisibleTo.includes(id)) c.costVisibleTo.push(id); }
-      else{ c.costVisibleTo = c.costVisibleTo.filter(x=>x!==id); }
-      await saveBoard(); render();
-    };
-  });
+    });
+  };
+  wireRole('capex-tent', ()=>c.tentativeAssignees, 'capexTentPicker');
+  wireRole('capex-actual', ()=>c.actualAssignees, 'capexActualPicker');
+  wireRole('capex-visible', ()=>c.costVisibleTo, 'capexVisiblePicker');
   el.querySelectorAll('[data-capex-field]').forEach(inp=>{
     inp.onchange = async ()=>{
       const [id, field] = inp.dataset.capexField.split('|');
