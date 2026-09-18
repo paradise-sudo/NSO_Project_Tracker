@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
@@ -281,6 +282,30 @@
   .approver-slot-row select{width:auto;flex:1;margin-left:10px;}
   .empty-note{text-align:center;padding:40px 20px;color:var(--sub);font-size:13px;}
 
+  /* Dashboard tracker grid — the Excel-style view, fed entirely from live stage data */
+  .tracker-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;}
+  .tracker-scroll{overflow-x:auto;overflow-y:auto;max-height:70vh;border:1px solid var(--line);border-radius:10px;background:#fff;-webkit-overflow-scrolling:touch;}
+  table.tracker{border-collapse:separate;border-spacing:0;font-size:11px;white-space:nowrap;}
+  table.tracker th, table.tracker td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0 7px;height:26px;text-align:center;}
+  table.tracker thead th{background:var(--task-bg);color:var(--maroon);font-weight:700;position:sticky;z-index:2;}
+  table.tracker thead tr:nth-child(1) th{top:0;}
+  table.tracker thead tr:nth-child(2) th{top:26px;}
+  table.tracker thead tr:nth-child(3) th{top:52px;}
+  table.tracker .col-proj{position:sticky;left:0;z-index:3;background:#fff;text-align:left;min-width:160px;max-width:160px;overflow:hidden;text-overflow:ellipsis;box-shadow:1px 0 0 var(--line);}
+  table.tracker thead .col-proj{background:var(--task-bg);z-index:4;}
+  table.tracker tbody tr:hover td{background:#FDFBF7;}
+  table.tracker tbody tr:hover td.col-proj{background:#FDFBF7;}
+  .cell-ontime{background:var(--done-bg);color:var(--done);}
+  .cell-done{background:#EFF4EF;color:var(--done);}
+  .cell-late{background:#FDECD8;color:#8A4A16;}
+  .cell-overdue{background:var(--gate-bg);color:#8A2E2E;font-weight:700;}
+  .cell-active{background:#F7EFD9;color:#8A5A12;}
+  .cell-pending{color:var(--pending);}
+  .cell-skip{background:#F6F3EE;color:#C9BFB3;}
+  .tracker-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--sub);margin-top:10px;}
+  .tracker-legend span{display:flex;align-items:center;gap:5px;}
+  .tracker-legend i{width:12px;height:12px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.06);}
+
   .attachment-row{gap:10px;}
   .attach-thumb{width:40px;height:40px;object-fit:cover;border-radius:6px;flex:none;cursor:pointer;}
   .attach-file-icon{width:40px;height:40px;display:flex;align-items:center;justify-content:center;
@@ -416,13 +441,16 @@
 <div class="wrap">
   <header>
     <div class="brand-row">
-      <img src="data:image/png;base64,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" alt="Paradise">
+      <!-- PASTE YOUR LOGO HERE: copy the single <img src="data:image/png;base64,..."> line
+           from your CURRENT index.html (same spot, inside .brand-row) and replace the line below. -->
+      <img src="data:image/png;base64,PASTE_YOUR_ORIGINAL_LOGO_LINE_HERE" alt="Paradise">
       <div class="brand-text">
         <p class="eyebrow">Live shared board · NSO FY27</p>
         <h1>Project Flow</h1>
       </div>
     </div>
     <div class="nav-tabs">
+      <button class="nav-tab" id="navScouting"><span class="nav-tab-short">S</span><span class="nav-tab-label">Scouting</span></button>
       <button class="nav-tab" id="navTracker"><span class="nav-tab-short">T</span><span class="nav-tab-label">Tracker</span></button>
       <button class="nav-tab" id="navExecution"><span class="nav-tab-short">E</span><span class="nav-tab-label">Execution</span></button>
       <button class="nav-tab" id="navDashboard"><span class="nav-tab-short">D</span><span class="nav-tab-label">Dashboard</span></button>
@@ -446,6 +474,7 @@
     <div class="store-tabs" id="storeTabs"></div>
     <div class="store-summary" id="storeSummary"></div>
     <div id="flow" class="loading">Loading board…</div>
+    <div id="scoutingView" class="admin-wrap" style="display:none;"></div>
     <div id="myTasksView" class="admin-wrap" style="display:none;"></div>
     <div id="dashboardView" class="admin-wrap" style="display:none;"></div>
     <div id="filesView" class="admin-wrap" style="display:none;"></div>
@@ -528,6 +557,10 @@ const respondToDropRequestFn = functionsClient.httpsCallable('respondToDropReque
 const reviveProjectFn = functionsClient.httpsCallable('reviveProject');
 const resendApprovalNotificationFn = functionsClient.httpsCallable('resendApprovalNotification');
 const approveCommercialTermsLineFn = functionsClient.httpsCallable('approveCommercialTermsLine');
+const approveScoutingSiteFn = functionsClient.httpsCallable('approveScoutingSite');
+const addScoutingApproverFn = functionsClient.httpsCallable('addScoutingApprover');
+const removeScoutingApproverFn = functionsClient.httpsCallable('removeScoutingApprover');
+const analyzeGeoiqReportFn = functionsClient.httpsCallable('analyzeGeoiqReport');
 const storage = firebase.storage();
 const BOARD_DOC = db.collection('nso').doc('board');
 let unsubscribeBoard = null;
@@ -543,8 +576,9 @@ let developerEmailsList = [];
 let pendingNewUserEmail = null; // set while we're waiting on a first-time user's name
 
 const FORMATS = {
-  Omni: { label:'Omni (Dine-in)', sizeText:'1,200–1,300 sqft' },
-  CloudKitchen: { label:'Cloud Kitchen', sizeText:'650 sqft' },
+  CK: { label:'CK & Kiosks', sizeText:'' },
+  F10: { label:'1.0 Format', sizeText:'' },
+  F20: { label:'2.0 Format', sizeText:'' },
 };
 let currentUser = null;
 
@@ -555,32 +589,84 @@ const STAGE4_REQUIRED_LEVEL = 4; // kept for reference/labeling only — panel e
 // function reads this variable by name at call time (not a snapshot), reassigning it here
 // is enough to make the whole app stage-editable without touching every call site.
 let STAGES = [
-  {id:2, num:'02', title:'Ground Scouting', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush (Lead) + Store Team + Consultants', duration:'Immediate', tatMinDays:0, tatMaxDays:14,
-   desc:'Physical scouting within identified markets.',
-   warning:'Bangalore: avoid new buildings — electrical load enhancement risk.'},
-  {id:12, num:'03', title:'Commercial Terms', type:'commercial-terms', requiresAssignment:false, requiresApproval:false, owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7,
-   desc:'Commercial/lease terms negotiated and captured — rent, tenure, security deposit, lock-in, and related terms. Filled in by Business Development.'},
-  {id:3, num:'04', title:'P&L Model — Site Specific', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5,
-   desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
-  {id:4, num:'05', title:'Site Visit + Sign-Off', type:'approval', requiresAssignment:false, requiresApproval:true, owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10,
-   desc:'All 5 panel members must physically visit the site. P&L reviewed on-site. No partial approvals — all 5 must sign off within the 10-day window.',
-   reworkTo:2},
-  {id:5, num:'06', title:'Feasibility + Service Req + CAPEX', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Renuka + Sandeep', duration:'1 Week', tatMinDays:0, tatMaxDays:7, parallelGroup:'g1',
+  {id:20, num:'00', title:"Pre-Feasibility & Site Mail Proposal", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Pre-Feasibility", desc:"Pre Feasibility Form filed and the New Site Mail Proposal circulated the same day."},
+  {id:21, num:'00', title:"DD Docs to Legal & Licensing", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD \u2192 Legal + Licensing", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Pre-Feasibility", desc:"Due-diligence docs leave BD the same day \u2014 to a named Legal coordinator (4-hour acknowledgement) and a named Licensing coordinator."},
+  {id:22, num:'00', title:"Commercial Approval \u2014 In-Principle", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"Founders", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Pre-Feasibility", desc:"Founders' commercial sign-in-principle, captured on Day 0 alongside the DD docs \u2014 stops the team investing in feasibility or design on a commercially unviable deal."},
+  {id:23, num:'00', title:"Feasibility", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Feasibility", desc:"Site feasibility assessment."},
+  {id:24, num:'00', title:"Licensing Pre-Check Initiated", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Licensing", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Feasibility", desc:"Licensing team's own preliminary check, run in parallel with feasibility."},
+  {id:25, num:'00', title:"Feasibility Report \u2014 Draft", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Design", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Feasibility", desc:"First-cut feasibility report."},
+  {id:26, num:'00', title:"Feasibility Report \u2014 Final (Joint Review)", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Design + Projects + BD", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Feasibility", desc:"Feasibility report finalised in joint review."},
+  {id:27, num:'00', title:"Developer Scope \u2014 Draft", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Design / Projects", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Feasibility", desc:"Developer scope of work drafted. Scope must be fully agreed before commercials lock \u2014 if scope reopens, commercials reopen too."},
+  {id:28, num:'00', title:"Developer Scope \u2014 Written Approval", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD + Landlord", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Feasibility", desc:"Landlord's written approval of the developer scope."},
+  {id:29, num:'00', title:"Licensing Sign-Off (Go / No-Go)", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"Licensing", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Feasibility", desc:"Licensing's own go/no-go call on the site."},
+  {id:12, num:'00', title:'Commercial Terms', type:'commercial-terms', requiresAssignment:false, requiresApproval:false, owner:'Business Development', duration:'Post scouting', tatMinDays:0, tatMaxDays:7, page:'project-flow', section:"Commercial & CAPEX",
+   desc:'Commercial/lease terms negotiated and captured \u2014 rent, tenure, security deposit, lock-in, and related terms. Filled in by Business Development.'},
+  {id:30, num:'00', title:"DD Report", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Legal", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Commercial & CAPEX", desc:"Legal's due-diligence report, run in parallel alongside CapEx work."},
+  {id:5, num:'00', title:'Feasibility + Service Req + CAPEX', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Renuka + Sandeep', duration:'1 Week', tatMinDays:0, tatMaxDays:7, parallelGroup:'g1', page:'project-flow', section:"Commercial & CAPEX",
    desc:'Detailed feasibility study, service requirements mapped, final CAPEX estimated and approved. Runs in parallel with electrical load confirmation.'},
-  {id:6, num:'07', title:'Electrical Load Confirmation', type:'gate', requiresAssignment:true, requiresApproval:false, owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', tatMinDays:0, tatMaxDays:14, bangaloreOnly:true, parallelGroup:'g1',
+  {id:6, num:'00', title:'Electrical Load Confirmation', type:'gate', requiresAssignment:true, requiresApproval:false, owner:'Landlord (confirmation) + Ayush (follow-up)', duration:'Parallel', tatMinDays:0, tatMaxDays:14, bangaloreOnly:true, parallelGroup:'g1', page:'project-flow', section:"Commercial & CAPEX",
    desc:'Landlord must confirm electrical load in writing before the LOI can be signed.',
-   warning:'HARD GATE — Bangalore specific. LOI cannot be signed until load is confirmed in writing. New buildings strictly avoided. No exceptions.',
+   warning:'HARD GATE \u2014 Bangalore specific. LOI cannot be signed until load is confirmed in writing. New buildings strictly avoided. No exceptions.',
    reworkTo:2},
-  {id:7, num:'08', title:'LOI Signing + Rent Structure', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Finance', duration:'Post load confirm', tatMinDays:0, tatMaxDays:14,
-   desc:'LOI / term sheet signed post load confirmation. Legal (Gunjan) initiates Agreement documentation in parallel — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution.'},
-  {id:8, num:'09', title:'Security Deposit', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Finance', duration:'1 Day', tatMinDays:0, tatMaxDays:1,
-   desc:'Security deposit paid to landlord post LOI signing.'},
-  {id:9, num:'10', title:'Agreement Date', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Legal (Gunjan)', duration:'14 Days', tatMinDays:0, tatMaxDays:14,
-   desc:'Lease agreement executed — landlord KYC, ownership proof, Encumbrance Certificate, NOC, Board Resolution finalised.'},
-  {id:10, num:'11', title:'Registration Date', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Legal (Gunjan)', duration:'35 Days', tatMinDays:0, tatMaxDays:35,
-   desc:'Lease agreement registered.'},
-  {id:11, num:'12', title:'Post-LOI Execution', type:'checklist', requiresAssignment:false, requiresApproval:false, owner:'All Workstream Owners', duration:'~54 Days', tatMinDays:0, tatMaxDays:54,
-   desc:'Construction, hiring, licensing, equipment delivery, and design specs — running in parallel from Construction Start through Snags Sign-Off, per the NSO Projects 2026–27 tracker.'},
+  {id:31, num:'00', title:"Capex Optimization Workshop", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects + Design + Finance", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Commercial & CAPEX", desc:"Joint workshop to optimise the first-cut CapEx (or a further +2-day extension if requested at the workshop itself)."},
+  {id:32, num:'00', title:"Final Initial Capex (Locked)", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Commercial & CAPEX", desc:"Initial CapEx locked following the optimisation workshop."},
+  {id:3, num:'00', title:'P&L Model \u2014 Site Specific', type:'task', requiresAssignment:true, requiresApproval:false, owner:'Ayush + Rajshekhar (Sales) + Renuka (CAPEX/ROI)', duration:'Built on ID', tatMinDays:0, tatMaxDays:5, page:'project-flow', section:"Commercial & CAPEX",
+   desc:'P&L built immediately when a site is identified. Sales projections and CAPEX/ROI combined into one deliverable before stakeholder review.'},
+  {id:4, num:'00', title:'Site Visit + Sign-Off', type:'approval', requiresAssignment:false, requiresApproval:true, owner:'Cross-functional panel (Director level+)', duration:'10-Day Window', tatMinDays:0, tatMaxDays:10, page:'project-flow', section:"Approval & LOI",
+   desc:'All 5 panel members must physically visit the site. P&L reviewed on-site. No partial approvals \u2014 all 5 must sign off within the 10-day window.',
+   reworkTo:2},
+  {id:33, num:'00', title:"LOI \u2014 Draft Circulated", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Legal", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Approval & LOI", desc:"LOI / term sheet drafted and circulated, locked terms only."},
+  {id:34, num:'00', title:"Unit ID \u2014 Pre-Notified", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"BD \u2192 Finance", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Approval & LOI", desc:"Finance given a 2-day heads-up before the Unit ID is created."},
+  {id:35, num:'00', title:"Internal Legal Review Window Closes", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"Legal + BD", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Approval & LOI", desc:"Internal legal review window closes."},
+  {id:36, num:'00', title:"LOI \u2014 Signed", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Legal", tatMinDays:0, tatMaxDays:1, page:"project-flow", section:"Approval & LOI", desc:"LOI / term sheet signed."},
+  {id:37, num:'00', title:"Unit ID Created", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Finance", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Approval & LOI", desc:"Unit ID created in Finance systems."},
+  {id:38, num:'00', title:"Design Start", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Design", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Kickoff", desc:"Design work begins \u2014 the anchor point for every format-specific Design/Fit-out/Go-Live/Post Go-Live milestone below, which all run in parallel from this day."},
+  {id:39, num:'00', title:"SD First Installment", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD / Finance", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Kickoff", desc:"First security-deposit installment paid to the landlord."},
+  {id:40, num:'00', title:"Developer SOW Start (Site Kick-off)", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD", tatMinDays:0, tatMaxDays:0, page:"project-flow", section:"Kickoff", desc:"Developer formally kicks off Scope-of-Work execution at site \u2014 the documented handover from \"deal closed\" to \"fit-out begins.\""},
+  {id:41, num:'00', title:"Manpower Plan Approved (Headcount by Role)", type:"task", requiresAssignment:true, requiresApproval:false, owner:"HR + Operations", tatMinDays:0, tatMaxDays:0, parallelGroup:"pl_1", tatByFormat:{CK:{min:0,max:0}, F10:{min:0,max:0}, F20:{min:0,max:0}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:42, num:'00', title:"Store Manager Offer Released", type:"task", requiresAssignment:true, requiresApproval:false, owner:"HR", tatMinDays:0, tatMaxDays:0, parallelGroup:"pl_1", tatByFormat:{CK:{min:0,max:0}, F10:{min:0,max:0}, F20:{min:0,max:0}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:43, num:'00', title:"Crew Hiring Drive Starts", type:"task", requiresAssignment:true, requiresApproval:false, owner:"HR", tatMinDays:19, tatMaxDays:19, tatByFormat:{CK:{min:10,max:10}, F10:{min:19,max:19}, F20:{min:26,max:26}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:44, num:'00', title:"Store Manager Joins (Trains at Live Store)", type:"task", requiresAssignment:true, requiresApproval:false, owner:"HR + Operations", tatMinDays:22, tatMaxDays:22, tatByFormat:{CK:{min:14,max:14}, F10:{min:22,max:22}, F20:{min:34,max:34}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:45, num:'00', title:"Crew Offers Closed (100% Headcount)", type:"task", requiresAssignment:true, requiresApproval:false, owner:"HR", tatMinDays:26, tatMaxDays:26, tatByFormat:{CK:{min:17,max:17}, F10:{min:26,max:26}, F20:{min:39,max:39}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:46, num:'00', title:"Crew Training Starts at Live Store", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Operations", tatMinDays:27, tatMaxDays:27, tatByFormat:{CK:{min:18,max:18}, F10:{min:27,max:27}, F20:{min:41,max:41}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:47, num:'00', title:"Food Handler Certification + Medical Checks", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"HR + Operations", tatMinDays:31, tatMaxDays:31, tatByFormat:{CK:{min:21,max:21}, F10:{min:31,max:31}, F20:{min:45,max:45}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:48, num:'00', title:"Uniforms, IDs, POS Logins Issued", type:"task", requiresAssignment:true, requiresApproval:false, owner:"HR + Operations", tatMinDays:32, tatMaxDays:32, tatByFormat:{CK:{min:22,max:22}, F10:{min:32,max:32}, F20:{min:46,max:46}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:49, num:'00', title:"Team at Site \u2014 Trial Run / Mock Service", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Operations", tatMinDays:33, tatMaxDays:33, tatByFormat:{CK:{min:23,max:23}, F10:{min:33,max:33}, F20:{min:48,max:48}}, page:"execution", section:"Manpower & HR", desc:"Runs in parallel with Design/Fit-out from Design Start."},
+  {id:50, num:'00', title:"Design Approval \u2014 Submitted", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Design", tatMinDays:13, tatMaxDays:13, tatByFormat:{CK:{min:5,max:5}, F10:{min:13,max:13}, F20:{min:18,max:18}}, page:"execution", section:"Design", desc:""},
+  {id:51, num:'00', title:"Design Approval \u2014 Sign-off", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"Design + Projects + BD", tatMinDays:14, tatMaxDays:14, tatByFormat:{CK:{min:6,max:6}, F10:{min:14,max:14}, F20:{min:19,max:19}}, page:"execution", section:"Design", desc:""},
+  {id:52, num:'00', title:"Design Completion", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Design", tatMinDays:15, tatMaxDays:15, parallelGroup:"pl_2", tatByFormat:{CK:{min:7,max:7}, F10:{min:15,max:15}, F20:{min:20,max:20}}, page:"execution", section:"Design", desc:""},
+  {id:53, num:'00', title:"Material Ordering & MDS", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing / Design", tatMinDays:15, tatMaxDays:15, parallelGroup:"pl_2", tatByFormat:{CK:{min:7,max:7}, F10:{min:15,max:15}, F20:{min:20,max:20}}, page:"execution", section:"Design", desc:""},
+  {id:54, num:'00', title:"IC Vendor Finalisation", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:16, tatMaxDays:16, parallelGroup:"pl_3", formats:["F10", "F20"], tatByFormat:{F10:{min:16,max:16}, F20:{min:22,max:22}}, page:"execution", section:"Sourcing", desc:""},
+  {id:55, num:'00', title:"HVAC Vendor Visit", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:16, tatMaxDays:16, parallelGroup:"pl_3", formats:["F10", "F20"], tatByFormat:{F10:{min:16,max:16}, F20:{min:23,max:23}}, page:"execution", section:"Sourcing", desc:""},
+  {id:56, num:'00', title:"Boardout & Signage", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:17, tatMaxDays:17, tatByFormat:{CK:{min:8,max:8}, F10:{min:17,max:17}, F20:{min:24,max:24}}, page:"execution", section:"Sourcing", desc:""},
+  {id:57, num:'00', title:"Pre-Possession Checklist", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"Projects + BD", tatMinDays:18, tatMaxDays:18, tatByFormat:{CK:{min:9,max:9}, F10:{min:18,max:18}, F20:{min:25,max:25}}, page:"execution", section:"Site & Fit-Out", desc:""},
+  {id:58, num:'00', title:"Possession Taken", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:19, tatMaxDays:19, tatByFormat:{CK:{min:10,max:10}, F10:{min:19,max:19}, F20:{min:26,max:26}}, page:"execution", section:"Site & Fit-Out", desc:""},
+  {id:59, num:'00', title:"Agreement \u2014 Draft", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Legal", tatMinDays:19, tatMaxDays:19, tatByFormat:{CK:{min:10,max:10}, F10:{min:19,max:19}, F20:{min:26,max:26}}, page:"execution", section:"Legal & Agreement", desc:""},
+  {id:60, num:'00', title:"SD Second Installment", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD / Finance", tatMinDays:20, tatMaxDays:20, tatByFormat:{CK:{min:11,max:11}, F10:{min:20,max:20}, F20:{min:27,max:27}}, page:"execution", section:"Legal & Agreement", desc:""},
+  {id:61, num:'00', title:"HVAC PO", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:20, tatMaxDays:20, formats:["F10", "F20"], tatByFormat:{F10:{min:20,max:20}, F20:{min:27,max:27}}, page:"execution", section:"Sourcing", desc:""},
+  {id:62, num:'00', title:"Agreement \u2014 Signed", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Legal", tatMinDays:22, tatMaxDays:22, parallelGroup:"pl_6", tatByFormat:{CK:{min:13,max:13}, F10:{min:22,max:22}, F20:{min:29,max:29}}, page:"execution", section:"Legal & Agreement", desc:""},
+  {id:63, num:'00', title:"SO & PO Release", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing / Projects", tatMinDays:22, tatMaxDays:22, parallelGroup:"pl_6", tatByFormat:{CK:{min:12,max:12}, F10:{min:22,max:22}, F20:{min:30,max:30}}, page:"execution", section:"Legal & Agreement", desc:""},
+  {id:64, num:'00', title:"Sample Board Submission", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:24, tatMaxDays:24, formats:["F10", "F20"], tatByFormat:{F10:{min:24,max:24}, F20:{min:33,max:33}}, page:"execution", section:"Sourcing", desc:""},
+  {id:65, num:'00', title:"Vendor Advances", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects / Sourcing", tatMinDays:25, tatMaxDays:25, formats:["F10", "F20"], tatByFormat:{F10:{min:25,max:25}, F20:{min:34,max:34}}, page:"execution", section:"Sourcing", desc:""},
+  {id:66, num:'00', title:"Equipment Delivery (Kiosk Fit-Out Kit)", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:14, tatMaxDays:14, formats:["CK"], tatByFormat:{CK:{min:14,max:14}}, page:"execution", section:"Sourcing", desc:""},
+  {id:67, num:'00', title:"Lights & Signage Delivery", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:15, tatMaxDays:15, formats:["CK"], tatByFormat:{CK:{min:15,max:15}}, page:"execution", section:"Sourcing", desc:""},
+  {id:68, num:'00', title:"Low Side Work", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:27, tatMaxDays:27, formats:["F10", "F20"], tatByFormat:{F10:{min:27,max:27}, F20:{min:38,max:38}}, page:"execution", section:"Site & Fit-Out", desc:""},
+  {id:69, num:'00', title:"Art Work Design", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Design", tatMinDays:28, tatMaxDays:28, formats:["F10", "F20"], tatByFormat:{F10:{min:28,max:28}, F20:{min:40,max:40}}, page:"execution", section:"Site & Fit-Out", desc:""},
+  {id:70, num:'00', title:"High Side Work", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:29, tatMaxDays:29, formats:["F10", "F20"], tatByFormat:{F10:{min:29,max:29}, F20:{min:42,max:42}}, page:"execution", section:"Site & Fit-Out", desc:""},
+  {id:71, num:'00', title:"Lights Delivery", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:30, tatMaxDays:30, formats:["F10", "F20"], tatByFormat:{F10:{min:30,max:30}, F20:{min:44,max:44}}, page:"execution", section:"Sourcing", desc:""},
+  {id:72, num:'00', title:"Signage Delivery", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:31, tatMaxDays:31, parallelGroup:"pl_7", formats:["F10", "F20"], tatByFormat:{F10:{min:31,max:31}, F20:{min:46,max:46}}, page:"execution", section:"Sourcing", desc:""},
+  {id:73, num:'00', title:"Kitchen Equipment", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:31, tatMaxDays:31, parallelGroup:"pl_7", formats:["F10", "F20"], tatByFormat:{F10:{min:31,max:31}, F20:{min:46,max:46}}, page:"execution", section:"Sourcing", desc:""},
+  {id:74, num:'00', title:"Furniture Delivery", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:32, tatMaxDays:32, tatByFormat:{CK:{min:16,max:16}, F10:{min:32,max:32}, F20:{min:47,max:47}}, page:"execution", section:"Sourcing", desc:""},
+  {id:75, num:'00', title:"Installation", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing / Projects", tatMinDays:19, tatMaxDays:19, formats:["CK"], tatByFormat:{CK:{min:19,max:19}}, page:"execution", section:"Site & Fit-Out", desc:""},
+  {id:76, num:'00', title:"Art Work Installation", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Sourcing", tatMinDays:32, tatMaxDays:32, tatByFormat:{CK:{min:21,max:21}, F10:{min:32,max:32}, F20:{min:47,max:47}}, page:"execution", section:"Site & Fit-Out", desc:""},
+  {id:77, num:'00', title:"Agreement Registration", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Legal / BD", tatMinDays:26, tatMaxDays:26, parallelGroup:"pl_8", tatByFormat:{CK:{min:18,max:18}, F10:{min:26,max:26}, F20:{min:35,max:35}}, page:"execution", section:"Legal & Agreement", desc:""},
+  {id:78, num:'00', title:"SD Final Installment", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD / Finance", tatMinDays:26, tatMaxDays:26, parallelGroup:"pl_8", tatByFormat:{CK:{min:17,max:17}, F10:{min:26,max:26}, F20:{min:36,max:36}}, page:"execution", section:"Legal & Agreement", desc:""},
+  {id:79, num:'00', title:"Handover to NSO", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:33, tatMaxDays:33, tatByFormat:{CK:{min:22,max:22}, F10:{min:33,max:33}, F20:{min:48,max:48}}, page:"execution", section:"Go-Live & Closure", desc:""},
+  {id:80, num:'00', title:"STORE GO LIVE", type:"task", requiresAssignment:true, requiresApproval:false, owner:"NSO", tatMinDays:34, tatMaxDays:34, tatByFormat:{CK:{min:24,max:24}, F10:{min:34,max:34}, F20:{min:49,max:49}}, page:"execution", section:"Go-Live & Closure", desc:""},
+  {id:81, num:'00', title:"Brokerage Paid", type:"task", requiresAssignment:true, requiresApproval:false, owner:"BD / Finance", tatMinDays:41, tatMaxDays:41, tatByFormat:{CK:{min:31,max:31}, F10:{min:41,max:41}, F20:{min:56,max:56}}, page:"execution", section:"Go-Live & Closure", desc:""},
+  {id:82, num:'00', title:"Measurement Sheet Verification", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:49, tatMaxDays:49, tatByFormat:{CK:{min:39,max:39}, F10:{min:49,max:49}, F20:{min:64,max:64}}, page:"execution", section:"Go-Live & Closure", desc:""},
+  {id:83, num:'00', title:"Soft Capex Closure (All Bills Logged)", type:"gate", requiresAssignment:true, requiresApproval:false, owner:"Projects + Finance", tatMinDays:58, tatMaxDays:58, tatByFormat:{CK:{min:48,max:48}, F10:{min:58,max:58}, F20:{min:73,max:73}}, page:"execution", section:"Go-Live & Closure", desc:""},
+  {id:84, num:'00', title:"Final Capex Closure", type:"task", requiresAssignment:true, requiresApproval:false, owner:"Projects", tatMinDays:68, tatMaxDays:68, tatByFormat:{CK:{min:58,max:58}, F10:{min:68,max:68}, F20:{min:83,max:83}}, page:"execution", section:"Go-Live & Closure", desc:""},
 ];
 
 // ---- Stage 11 checklist item definitions (from NSO Projects 2026–27, rows 3 & 4) ----
@@ -654,9 +740,13 @@ let activeStore = null;
 let currentView = 'tracker';
 let trackerSubView = 'list'; // 'list' (all projects) | 'detail' (one project's stages) — Tracker always lands on the list first
 let activePage = 'project-flow'; // 'project-flow' | 'execution' — which half of the ONE stage sequence is currently displayed; purely a display filter, not a separate progression
+let activeSection = null; // sub-tab within the current page (e.g. 'Sourcing', 'Manpower & HR') — null means "show every section" for pages that don't use sections
 let stageViewMode = 'vertical'; // 'vertical' | 'horizontal' — user's own choice, remembered per device
 let slaEditorSiteId = null; // which project's TAT overrides are currently shown in Admin's TAT Settings
 let slaSectionOpen = false; // keeps the TAT Settings accordion open across re-renders once the user opens it
+let revertStageSiteId = null; // which project's completed stages are shown in Admin's Revert section
+let revertSectionOpen = false; // keeps the Revert accordion open across re-renders once opened
+let dashboardPageFilter = 'all'; // 'all' | 'project-flow' | 'execution' — which slice of the pipeline the Dashboard grid shows
 let openAccordions = {}; // generalized version of the same idea — keyed by section id, for every other collapsible section
 function wireAccordionPersistence(container){
   container.querySelectorAll('details[data-acc-key]').forEach(d=>{
@@ -727,11 +817,11 @@ function uid(prefix){ return prefix + '_' + Date.now().toString(36) + Math.rando
 
 function defaultBoard(){
   const seedSites = [
-    {id:'BLR-1', name:'Bangalore — Site 1', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
-    {id:'BLR-2', name:'Bangalore — Site 2', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
-    {id:'BLR-3', name:'Bangalore — Site 3', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
-    {id:'BLR-4', name:'Bangalore — Site 4', city:'BLR', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
-    {id:'CHN-1', name:'Chennai — Site 1', city:'CHN', format:'Omni', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'BLR-1', name:'Bangalore — Site 1', city:'BLR', format:'F10', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'BLR-2', name:'Bangalore — Site 2', city:'BLR', format:'F10', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'BLR-3', name:'Bangalore — Site 3', city:'BLR', format:'F10', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'BLR-4', name:'Bangalore — Site 4', city:'BLR', format:'F10', templateId:'tmpl_nso', status:'live', ownerId:null},
+    {id:'CHN-1', name:'Chennai — Site 1', city:'CHN', format:'F10', templateId:'tmpl_nso', status:'live', ownerId:null},
   ];
   const seedStakeholders = [
     {id:'sh_abhik', name:'Abhik Mitra', department:'MD Office', level:'Leadership (MD/CFO/CXO)', isApprover:true},
@@ -744,7 +834,7 @@ function defaultBoard(){
     {
       id: 'tmpl_nso',
       name: 'NSO — New Store Opening',
-      description: "Paradise's 11-stage new store opening pipeline — Market Identification through Post-LOI Execution.",
+      description: "Paradise's NSO pipeline — Chaayos-derived, format-specific (CK & Kiosks / 1.0 / 2.0), with Manpower.",
       builtIn: true,       // can't be deleted or reassigned; Admin-only to modify (no structure editor yet)
       ownerId: null,       // no single Developer owns the built-in template
       createdAt: Date.now(),
@@ -769,6 +859,10 @@ function defaultBoard(){
     dropApprovers: [],
     postLoiTasks: defaultPostLoiTasks(),
     postLoiDelivery: defaultPostLoiDelivery(),
+    scoutingLocations: [],
+    scoutingSiteData: {},
+    scoutingFields: defaultScoutingFields(),
+    scoutingApprovers: [],
   };
 }
 
@@ -780,6 +874,22 @@ function defaultBoard(){
 function defaultRestaurantCostHeaders(){
   return [
     {id:'fixedOpex', label:'Fixed Monthly Opex — Rent, Staff, Utilities'},
+  ];
+}
+
+// The editable field list for a Scouting site's ground record — same admin-editable
+// pattern as Commercial Terms' field list below, so BD's actual paperwork can shape
+// what gets captured without a code change.
+function defaultScoutingFields(){
+  return [
+    {id:'address', label:'Address / Landmark', type:'textarea'},
+    {id:'carpetArea', label:'Approx. Carpet Area (sqft)', type:'text'},
+    {id:'frontage', label:'Frontage', type:'text'},
+    {id:'footfall', label:'Footfall Observation', type:'textarea'},
+    {id:'competition', label:'Nearby Competition', type:'textarea'},
+    {id:'rentExpectation', label:'Rent Expectation', type:'text'},
+    {id:'landlordContact', label:'Landlord / Broker Contact', type:'text'},
+    {id:'groundObservations', label:'BD / Consultant Ground Observations', type:'textarea'},
   ];
 }
 
@@ -824,7 +934,7 @@ function defaultCommercialTermsFields(){
 function makeSiteData(site){
   const stageData = {};
   STAGES.forEach(st=>{
-    const skip = st.bangaloreOnly && site.city !== 'BLR';
+    const skip = (st.bangaloreOnly && site.city !== 'BLR') || (st.formats && !st.formats.includes(site.format));
     stageData[st.id] = { status: skip ? 'skip' : (st.id===STAGES[0].id ? 'active' : 'pending'), approvals:{}, notes:'', updatedBy:'', updatedAt:0,
       startedAt: (st.id===STAGES[0].id && !skip && site.status !== 'draft') ? Date.now() : null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
     if(st.id === 3){
@@ -903,6 +1013,18 @@ function migrateStageStructure(){
   // today's default the first time, then always point STAGES at whatever's actually
   // stored, so every function in the app automatically uses the live, edited version.
   if(!board.nsoStages || !board.nsoStages.length){ board.nsoStages = STAGES; changed = true; }
+  // v2 pipeline — Chaayos-derived, format-specific (CK/F10/F20), with Manpower. Keeps
+  // Commercial Terms(12)/P&L(3)/Site Visit(4)/Feasibility+CAPEX(5)/Electrical Load(6)
+  // exactly as they were; everything else is replaced. Runs once per board — bump
+  // PIPELINE_VERSION to force a re-migration later.
+  const PIPELINE_VERSION = 'chaayos-manpower-v1';
+  if(board.nsoStagesVersion !== PIPELINE_VERSION){
+    board.nsoStages = STAGES; // STAGES here is the new default array defined near the top of this file
+    board.nsoStagesVersion = PIPELINE_VERSION;
+    const FORMAT_REMAP = { Omni: 'F10', CloudKitchen: 'CK' };
+    (board.sites || []).forEach(site=>{ if(FORMAT_REMAP[site.format]) site.format = FORMAT_REMAP[site.format]; });
+    changed = true;
+  }
   STAGES = board.nsoStages;
   // Commercial Terms stage added after Ground Scouting — backfill it into any board whose
   // nsoStages was already seeded before this stage existed, so existing live pipelines
@@ -926,6 +1048,19 @@ function migrateStageStructure(){
   if(!board.dropApprovers){ board.dropApprovers = []; changed = true; }
   if(!board.postLoiTasks || board.postLoiTasks.length === 0){ board.postLoiTasks = defaultPostLoiTasks(); changed = true; }
   if(!board.postLoiDelivery || board.postLoiDelivery.length === 0){ board.postLoiDelivery = defaultPostLoiDelivery(); changed = true; }
+  if(!board.scoutingLocations){ board.scoutingLocations = []; changed = true; }
+  if(!board.scoutingSiteData){ board.scoutingSiteData = {}; changed = true; }
+  if(!board.scoutingFields || board.scoutingFields.length === 0){ board.scoutingFields = defaultScoutingFields(); changed = true; }
+  if(!board.scoutingApprovers){ board.scoutingApprovers = []; changed = true; }
+  // Backfill any scouting site saved before a field/flag existed on it, same
+  // "extend, never erase" principle as the rest of migrateStageStructure.
+  Object.values(board.scoutingSiteData || {}).forEach(site=>{
+    if(!site.log){ site.log = []; changed = true; }
+    if(!site.attachments){ site.attachments = []; changed = true; }
+    if(!site.assignedTo){ site.assignedTo = []; changed = true; }
+    if(!site.values){ site.values = {}; changed = true; }
+    if(!site.status){ site.status = 'scouting'; changed = true; }
+  });
   // Migrate each project's single fixedOpex number into the new itemized costLines
   // shape, under the SAME header id ('fixedOpex') the default list starts with — so
   // existing payback/ROI numbers don't change the moment this loads, just the storage
@@ -1013,7 +1148,7 @@ function migrateStageStructure(){
   if(!board.templates){
     board.templates = [{
       id: 'tmpl_nso', name: 'NSO — New Store Opening',
-      description: "Paradise's 11-stage new store opening pipeline — Market Identification through Post-LOI Execution.",
+      description: "Paradise's NSO pipeline — Chaayos-derived, format-specific (CK & Kiosks / 1.0 / 2.0), with Manpower.",
       builtIn: true, ownerId: null, createdAt: Date.now(),
     }];
     changed = true;
@@ -1039,7 +1174,7 @@ function migrateStageStructure(){
     if(!STAGES.find(st=>st.id===s.current)){ s.current = STAGES[0].id; changed = true; }
     STAGES.forEach(st=>{
       if(!s.stageData[st.id]){
-        const skip = st.bangaloreOnly && site.city !== 'BLR';
+        const skip = (st.bangaloreOnly && site.city !== 'BLR') || (st.formats && !st.formats.includes(site.format));
         s.stageData[st.id] = { status: skip ? 'skip' : 'pending', approvals:{}, notes:'', updatedBy:'', updatedAt:0,
           startedAt: null, delayReason:'', delayLoggedBy:'', delayLoggedAt:0, attachments:[], assignedTo:[], blockerFlags:[] };
         changed = true;
@@ -1324,6 +1459,7 @@ function recalculateDueDates(id){
       continue;
     }
 
+    const site = getSite(id);
     // Consecutive stages sharing a parallelGroup start together at the same anchor and
     // each get their own due date, but the pipeline only moves past the group once the
     // LONGEST of them would finish — not the sum of both.
@@ -1334,15 +1470,16 @@ function recalculateDueDates(id){
       let maxTat = 0;
       group.forEach(gst=>{
         const gd = s.stageData[gst.id];
-        if(gd && gd.status !== 'done' && gd.status !== 'skip') gd.dueDate = anchor + (gst.tatMaxDays||0) * 86400000;
-        maxTat = Math.max(maxTat, gst.tatMaxDays||0);
+        const gTat = formatTat(gst, site).max||0;
+        if(gd && gd.status !== 'done' && gd.status !== 'skip') gd.dueDate = anchor + gTat * 86400000;
+        maxTat = Math.max(maxTat, gTat);
       });
       anchor = anchor + maxTat * 86400000;
       i = j;
       continue;
     }
 
-    d.dueDate = anchor + (st.tatMaxDays||0) * 86400000;
+    d.dueDate = anchor + (formatTat(st, site).max||0) * 86400000;
     anchor = d.dueDate;
     i++;
   }
@@ -1362,13 +1499,25 @@ function fmtTatRange(min, max){
   return min === max ? `${max} Days` : `${min}–${max} Days`;
 }
 
-function effectiveTat(siteId, key, defaultMin, defaultMax){
+function effectiveTat(siteId, key, defaultMin, defaultMax, tatByFormat){
   if(board && board.tatOverrides && board.tatOverrides[siteId] && board.tatOverrides[siteId][key]){
     const ov = board.tatOverrides[siteId][key];
     const min = parseInt(ov.min), max = parseInt(ov.max);
     if(!isNaN(min) && !isNaN(max)) return { min, max };
   }
+  if(tatByFormat){
+    const site = getSite(siteId);
+    const fv = site && tatByFormat[site.format];
+    if(fv) return { min: fv.min, max: fv.max };
+  }
   return { min: defaultMin||0, max: defaultMax };
+}
+// Format-aware duration lookup used by recalculateDueDates() above — per-project
+// tatOverrides don't apply here (that's what effectiveTat() is for); this just resolves
+// a stage's own TAT for the site's format before falling back to its flat default.
+function formatTat(st, site){
+  if(st.tatByFormat && site && st.tatByFormat[site.format]) return st.tatByFormat[site.format];
+  return { min: st.tatMinDays||0, max: st.tatMaxDays };
 }
 
 function stageTiming(st, d, siteId){
@@ -1376,7 +1525,7 @@ function stageTiming(st, d, siteId){
   if(site && site.status === 'dropped') return null; // dropped projects never show as overdue
   if(!d.startedAt || d.status==='done' || d.status==='skip') return null;
   const elapsedDays = Math.floor((Date.now() - d.startedAt) / 86400000);
-  const tat = effectiveTat(siteId, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays);
+  const tat = effectiveTat(siteId, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays, st.tatByFormat);
   const overdueDays = elapsedDays - tat.max;
   return { elapsedDays, overdueDays, isOverdue: overdueDays > 0, tatMin: tat.min, tatMax: tat.max };
 }
@@ -1441,6 +1590,7 @@ function render(){
   document.getElementById('navTracker').classList.toggle('active', currentView==='tracker' && activePage==='project-flow');
   document.getElementById('navExecution').classList.toggle('active', currentView==='tracker' && activePage==='execution');
   document.getElementById('navDashboard').classList.toggle('active', currentView==='dashboard');
+  document.getElementById('navScouting').classList.toggle('active', currentView==='scouting');
   document.getElementById('navMyTasks').classList.toggle('active', currentView==='myTasks');
   document.getElementById('navFiles').classList.toggle('active', currentView==='files');
   document.getElementById('navCapex').classList.toggle('active', currentView==='capex');
@@ -1456,6 +1606,7 @@ function render(){
   const deleteRowEl = document.getElementById('deleteProjectRow');
   if(deleteRowEl) deleteRowEl.style.display = inDetailView ? '' : 'none';
   document.getElementById('projectListView').style.display = (currentView==='tracker' && trackerSubView==='list') ? 'block' : 'none';
+  document.getElementById('scoutingView').style.display = currentView==='scouting' ? 'block' : 'none';
   document.getElementById('myTasksView').style.display = currentView==='myTasks' ? 'block' : 'none';
   document.getElementById('dashboardView').style.display = currentView==='dashboard' ? 'block' : 'none';
   document.getElementById('filesView').style.display = currentView==='files' ? 'block' : 'none';
@@ -1471,6 +1622,8 @@ function render(){
       renderSummary();
       renderFlow();
     }
+  } else if(currentView === 'scouting'){
+    renderScoutingView();
   } else if(currentView === 'myTasks'){
     renderMyTasks();
   } else if(currentView === 'dashboard'){
@@ -1672,6 +1825,773 @@ function goToAssignment(item){
   trackerSubView = 'detail';
   render();
   openSheet(item.stageId);
+}
+
+function renderScoutingView(){
+  const el = document.getElementById('scoutingView');
+  const locations = visibleScoutingLocations();
+  let html = `<div class="admin-section">
+    <h3>Scouting</h3>
+    <div class="sub">Every location and every site identified through scouting. Add sites under a location as you find them — each site keeps its own record, and nothing here is ever overwritten, only added to.</div>
+    <div class="field"><label>New location name</label><input id="newScoutLocationName" placeholder="e.g. Kammanahalli"></div>
+    <div class="field"><label>City</label><select id="newScoutLocationCity">${board.cities.map(c=>`<option value="${c.code}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div class="btn-row"><button class="btn primary" id="addScoutLocationBtn">Add location</button></div>
+  </div>`;
+
+  if(!locations.length){
+    html += `<div class="empty-note">No locations yet — add one above to start scouting.</div>`;
+  }
+
+  locations.forEach(loc=>{
+    const sites = scoutingSitesForLocation(loc.id);
+    html += `<div class="admin-section">
+      <details class="collapse-group" data-acc-key="scoutloc_${loc.id}">
+        <summary>${escapeHtml(loc.name)} <span style="font-weight:400;color:var(--sub);font-size:11px;">${escapeHtml((board.cities.find(c=>c.code===loc.city)||{}).name || loc.city)} · ${sites.length} site${sites.length===1?'':'s'}</span></summary>
+        ${sites.length===0 ? `<div class="empty-note">No sites added yet.</div>` : sites.map(site=>{
+          const meta = SCOUTING_STATUS_META[site.status] || SCOUTING_STATUS_META.scouting;
+          const assignedNames = (site.assignedTo||[]).map(id=>{const p=board.stakeholders.find(x=>x.id===id);return p?p.name:null;}).filter(Boolean);
+          return `<div class="admin-row" data-open-scout-site="${site.id}" style="cursor:pointer;flex-wrap:wrap;">
+            <div style="flex:1 1 100%;">
+              <div class="admin-row-main">${escapeHtml(site.label)}</div>
+              <div class="admin-row-sub">${assignedNames.length ? 'Assigned: '+escapeHtml(assignedNames.join(', ')) : 'Unassigned'}</div>
+            </div>
+            <div class="stage-pill" style="background:${meta.bg};color:${meta.ink};margin-top:6px;">${escapeHtml(meta.label)}</div>
+          </div>`;
+        }).join('')}
+        <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+          <label>New site label</label><input id="newScoutSiteLabel_${loc.id}" value="Site ${sites.length+1}">
+        </div>
+        <div class="btn-row"><button class="btn ghost" data-add-scout-site="${loc.id}">Add site</button></div>
+      </details>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+  wireAccordionPersistence(el);
+
+  const addLocBtn = document.getElementById('addScoutLocationBtn');
+  if(addLocBtn) addLocBtn.onclick = withClickLoading(addLocBtn, 'Working…', async ()=>{
+    const name = document.getElementById('newScoutLocationName').value.trim();
+    if(!name) return;
+    const city = document.getElementById('newScoutLocationCity').value;
+    const me = findMyStakeholder();
+    board.scoutingLocations = board.scoutingLocations || [];
+    board.scoutingLocations.push({ id: uid('loc'), name, city, createdBy: me?me.id:null, createdByName: getWho(), createdAt: Date.now(), archivedAt: null });
+    await saveBoard();
+    document.getElementById('newScoutLocationName').value = '';
+    render();
+  });
+
+  el.querySelectorAll('[data-add-scout-site]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const locId = btn.dataset.addScoutSite;
+      const loc = board.scoutingLocations.find(l=>l.id===locId);
+      if(!loc) return;
+      const labelInput = document.getElementById(`newScoutSiteLabel_${locId}`);
+      const label = (labelInput && labelInput.value.trim()) || `Site ${scoutingSitesForLocation(locId).length+1}`;
+      const me = findMyStakeholder();
+      const who = getWho();
+      const id = uid('scout');
+      board.scoutingSiteData = board.scoutingSiteData || {};
+      board.scoutingSiteData[id] = {
+        id, locationId: locId, locationName: loc.name, label, city: loc.city,
+        assignedTo: me ? [me.id] : [],
+        values: {}, attachments: [], status: 'scouting',
+        createdBy: me ? me.id : null, createdByName: who, createdAt: Date.now(),
+        updatedBy: who, updatedAt: Date.now(),
+        log: [{ text: `Site created by ${who}`, by: who, byId: me?me.id:null, at: Date.now() }],
+      };
+      await saveBoard();
+      render();
+      openScoutingSiteSheet(id);
+    });
+  });
+
+  el.querySelectorAll('[data-open-scout-site]').forEach(row=>{
+    row.onclick = ()=> openScoutingSiteSheet(row.dataset.openScoutSite);
+  });
+}
+
+// GeoIQ report — upload once the scouting site is approved, then Claude reads the PDF
+// and pulls out the numbers that matter. Kept separate from the generic "Photos &
+// Documents" attachments below, since this one drives its own AI analysis step and a
+// dedicated summary — not just a file link.
+function renderGeoiqReportSection(site, canEdit){
+  const g = site.geoiqReport || {};
+  let html = `<details class="collapse-group" open><summary>GeoIQ Site Report <span style="font-weight:400;color:var(--sub);font-size:11px;">${g.status==='done'?'analyzed':g.status==='analyzing'?'analyzing…':g.status==='failed'?'failed':'not uploaded'}</span></summary>`;
+
+  if(!g.fileUrl){
+    html += `<div class="info-box">Upload the GeoIQ site report (PDF from retailiq.geoiq.ai) to pull its numbers in automatically.</div>`;
+    if(canEdit){
+      html += `<div class="field"><input id="geoiqFile" type="file" accept="application/pdf"></div>
+        <div class="btn-row"><button class="btn ghost" id="uploadGeoiqBtn">Upload &amp; analyze</button></div>
+        <div id="geoiqUploadStatus" class="progress-line"></div>`;
+    }
+  } else {
+    html += `<div class="progress-line">${escapeHtml(g.fileName||'GeoIQ report')} · uploaded by ${escapeHtml(g.uploadedBy||'—')} · ${timeAgo(g.uploadedAt)} — <a href="${g.fileUrl}" target="_blank" rel="noopener">open PDF</a></div>`;
+    if(g.status === 'analyzing'){
+      html += `<div class="info-box">Analyzing — Claude is reading the report. This can take a minute or two; feel free to close this and come back.</div>`;
+    } else if(g.status === 'failed'){
+      html += `<div class="warn">⚠ Could not read this report: ${escapeHtml(g.error||'unknown error')}</div>`;
+      if(canEdit) html += `<div class="btn-row"><button class="btn ghost" id="retryGeoiqBtn">Retry analysis</button></div>`;
+    } else if(g.status === 'done' && g.parsedData){
+      html += renderGeoiqFullSummary(g);
+      html += `<div class="progress-line">Analyzed ${timeAgo(g.analyzedAt)}.</div>`;
+    }
+    if(canEdit && g.status !== 'analyzing'){
+      html += `<div class="field" style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;"><label>Replace with a new PDF</label><input id="geoiqFile" type="file" accept="application/pdf"></div>
+        <div class="btn-row"><button class="btn ghost" id="uploadGeoiqBtn">Upload &amp; analyze</button></div>
+        <div id="geoiqUploadStatus" class="progress-line"></div>`;
+    }
+  }
+  html += `</details>`;
+  return html;
+}
+function fmtNum(n){ const v = parseFloat(n); return (n===null||n===undefined||isNaN(v)) ? '—' : v.toLocaleString('en-IN'); }
+// Small colored chip for a benchmark zone — mirrors the reference tool's good/mid/weak/
+// top/na coloring using this app's own palette instead of introducing new CSS classes.
+function zoneChipHtml(z){
+  const map = { top:['#fff','var(--done)'], good:['var(--done)','var(--done-bg)'], mid:['#8A5A12','var(--appr-bg)'], weak:['#8A2E2E','var(--gate-bg)'], na:['var(--sub)','var(--pending-bg)'] };
+  const [ink,bg] = map[z] || map.na;
+  const label = {top:'Top',good:'Good',mid:'Borderline',weak:'Weak',na:'—'}[z] || '—';
+  return `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${bg};color:${ink};">${label}</span>`;
+}
+// Renders the full parsed GeoIQ data — overview score/highlights, population, retail
+// indicators, footfall, competition, risk, the Paradise 18-feature benchmark fit, key
+// highlights and data-quality flags. Every sub-block checks for its own data and is
+// skipped when the PDF didn't have it, so a partially-read report still shows cleanly.
+function renderGeoiqFullSummary(g){
+  const d = g.parsedData;
+  const bf = g.benchmarkFit;
+  let html = `<div style="margin:8px 0;">`;
+  if(d.summary) html += `<div class="progress-line" style="font-weight:600;color:var(--ink);margin-bottom:10px;">${escapeHtml(d.summary)}</div>`;
+
+  // Paradise benchmark fit — the most decision-relevant number, shown first
+  if(bf && (bf.dinein.scored + bf.delivery.scored) > 0){
+    html += `<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:140px;background:var(--task-bg);border-radius:8px;padding:10px 12px;">
+        <div style="font-size:10.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;">Dine-in fit</div>
+        <div style="font-size:20px;font-weight:700;color:var(--ink);">${bf.dinein.pass}/${bf.dinein.scored}<span style="font-size:12px;font-weight:400;color:var(--sub);"> of 10 features</span></div>
+        ${bf.dinein.pct!==null?`<div style="font-size:11px;color:var(--sub);">${bf.dinein.pct}% correlation-weighted</div>`:''}
+      </div>
+      <div style="flex:1;min-width:140px;background:var(--task-bg);border-radius:8px;padding:10px 12px;">
+        <div style="font-size:10.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;">Delivery fit</div>
+        <div style="font-size:20px;font-weight:700;color:var(--ink);">${bf.delivery.pass}/${bf.delivery.scored}<span style="font-size:12px;font-weight:400;color:var(--sub);"> of 8 features</span></div>
+        ${bf.delivery.pct!==null?`<div style="font-size:11px;color:var(--sub);">${bf.delivery.pct}% correlation-weighted</div>`:''}
+      </div>
+    </div>
+    <div class="progress-line" style="margin-top:0;margin-bottom:10px;">Against the 18 GeoIQ features correlated with revenue across Paradise's own stores. Indicative — built from whatever this PDF's radius supports, not GeoIQ's exact feature export.</div>`;
+  }
+
+  // Overview: score + highlight chips
+  const ov = d.overview || {};
+  if(ov.score !== null && ov.score !== undefined || ov.highlights){
+    html += `<div style="margin-bottom:10px;">`;
+    if(ov.score !== null && ov.score !== undefined) html += `<div style="font-size:11px;color:var(--sub);">GeoIQ site score</div><div style="font-size:22px;font-weight:700;color:var(--ink);margin-bottom:6px;">${escapeHtml(String(ov.score))}<span style="font-size:13px;color:var(--sub);font-weight:400;"> /5</span></div>`;
+    const hl = ov.highlights || {};
+    const hlLabels = { footfall:'Footfall', spend_quotient:'Spend quotient', growth:'Growth', complementary_presence:'Complementary brands', competitor_presence:'Competitor presence', cannibalisation:'Cannibalisation', total_addressable_market:'Addressable market' };
+    const hlRows = Object.keys(hlLabels).filter(k=>hl[k]);
+    if(hlRows.length){
+      html += `<div style="display:flex;flex-wrap:wrap;gap:6px;">` + hlRows.map(k=>`<span style="font-size:11px;background:var(--pending-bg);border-radius:6px;padding:4px 8px;">${hlLabels[k]}: <b>${escapeHtml(hl[k])}</b></span>`).join('') + `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Population
+  const p = d.population || {};
+  const popRows = [];
+  if(p.hh_total) popRows.push(['Total households', fmtNum(p.hh_total)]);
+  if(p.hh_10l) popRows.push(['Households ₹10L+ income', fmtNum(p.hh_10l) + (p.hh_10l_pct?` (${Math.round(p.hh_10l_pct)}%)`:'')]);
+  if(p.hh_20l) popRows.push(['Households ₹20L+ income', fmtNum(p.hh_20l) + (p.hh_20l_pct?` (${Math.round(p.hh_20l_pct)}%)`:'')]);
+  if(p.affluence !== null && p.affluence !== undefined) popRows.push(['Affluence index', p.affluence.toFixed(2) + (p.affluence_city?` (city ${p.affluence_city.toFixed(2)})`:'')]);
+  if(p.res_rent_sqft) popRows.push(['Residential rent', '₹'+fmtNum(p.res_rent_sqft)+'/sq.ft' + (p.res_rent_sqft_city?` (city ₹${fmtNum(p.res_rent_sqft_city)})`:'')]);
+  if(popRows.length) html += geoiqMetricBlock('Population & lifestyle', popRows);
+
+  // Retail indicators
+  const r = d.retail || {};
+  const retRows = [];
+  if(r.footfall !== null && r.footfall !== undefined) retRows.push(['Footfall index', r.footfall.toFixed(0) + (r.footfall_city?` (city ${r.footfall_city.toFixed(0)})`:'') + ' /100']);
+  if(r.growth !== null && r.growth !== undefined) retRows.push(['Growth index', r.growth.toFixed(0) + (r.growth_city?` (city ${r.growth_city.toFixed(0)})`:'') + ' /100']);
+  if(r.spending !== null && r.spending !== undefined) retRows.push(['Spending capacity', r.spending.toFixed(0) + (r.spending_city?` (city ${r.spending_city.toFixed(0)})`:'') + ' /100']);
+  if(r.stores !== null && r.stores !== undefined) retRows.push(['Stores nearby', fmtNum(r.stores) + (r.stores_city?` (city avg ${fmtNum(r.stores_city)})`:'')]);
+  if(retRows.length) html += geoiqMetricBlock('Retail indicators', retRows);
+
+  // Footfall trend (simple text, no chart on the sheet — the PPT gets the bar chart)
+  if(d.footfall_hourly && Array.isArray(d.footfall_hourly) && d.footfall_hourly.length===24){
+    const peak = d.footfall_hourly.indexOf(Math.max(...d.footfall_hourly));
+    const peakLabel = peak===0?'12 AM':peak<12?`${peak} AM`:peak===12?'12 PM':`${peak-12} PM`;
+    html += geoiqMetricBlock('Footfall', [['Peak hour', peakLabel + (d.footfall_month?` (${escapeHtml(d.footfall_month)})`:'')]]);
+  }
+
+  // Competition
+  const comp = d.competitors || [], compl = d.complementary || [];
+  if(comp.length || compl.length){
+    const compNames = [...new Set(comp.map(c=>c.name))];
+    const compRows = [];
+    if(comp.length) compRows.push(['Competitor outlets', `${comp.length} outlets, ${compNames.length} brand${compNames.length===1?'':'s'}`]);
+    if(compl.length) compRows.push(['Complementary outlets nearby', String(compl.length)]);
+    html += geoiqMetricBlock('Competition', compRows);
+    if(compNames.length) html += `<div class="progress-line" style="margin-top:-4px;">${compNames.slice(0,8).map(escapeHtml).join(', ')}${compNames.length>8?', …':''}</div>`;
+  }
+
+  // Risk: cannibalisation + closures
+  const can = d.cannibalisation || {};
+  const riskRows = [];
+  if(can.pct !== null && can.pct !== undefined) riskRows.push(['Cannibalisation', can.pct.toFixed(1)+'%']);
+  else if(can.rating) riskRows.push(['Cannibalisation', escapeHtml(can.rating) + (can.active_stores===0?' (no Paradise stores loaded in GeoIQ — unverified)':'')]);
+  if(Array.isArray(d.closures) && d.closures.length){
+    const total = d.closures.reduce((s,c)=>s+(parseFloat(c.count)||0),0);
+    const fnb = d.closures.filter(c=>/^(?!.*internet).*(restaurant|cafe|bakery|dessert|food|qsr|sweet)/i.test(c.category||'')).reduce((s,c)=>s+(parseFloat(c.count)||0),0);
+    riskRows.push(['Closures nearby (12mo)', `${fnb} F&B of ${total} total`]);
+  }
+  if(riskRows.length) html += geoiqMetricBlock('Risk', riskRows);
+
+  if(Array.isArray(d.key_highlights) && d.key_highlights.length){
+    html += `<div class="field" style="margin-top:10px;"><label>Key highlights</label><ul style="margin:0;padding-left:18px;font-size:13px;">` + d.key_highlights.map(h=>`<li>${escapeHtml(h)}</li>`).join('') + `</ul></div>`;
+  }
+  if(Array.isArray(d.flags) && d.flags.length){
+    html += `<div class="warn" style="margin-top:10px;font-size:12px;"><strong>Data checks:</strong><ul style="margin:4px 0 0;padding-left:18px;">` + d.flags.map(f=>`<li>${escapeHtml(f)}</li>`).join('') + `</ul></div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+function geoiqMetricBlock(title, rows){
+  return `<div style="margin-bottom:10px;">
+    <div style="font-size:10.5px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${escapeHtml(title)}</div>
+    <div class="approver-list">${rows.map(r=>`<div class="approver" style="padding:6px 0;"><div class="approver-name" style="font-size:12.5px;">${escapeHtml(r[0])}</div><div style="font-weight:600;font-size:12.5px;">${r[1]}</div></div>`).join('')}</div>
+  </div>`;
+}
+
+// Quick-estimate financials — deliberately lightweight (flat monthly revenue, not the
+// full 12-month ramp curve the P&L stage uses), since this is a preliminary scouting-
+// stage read, not the detailed model. Computed live from whatever's saved.
+function computePrelimFinancials(pf){
+  const capex = parseFloat(pf.capex) || 0;
+  const revenue = parseFloat(pf.monthlyRevenue) || 0;
+  const cogsPct = parseFloat(pf.cogsPct) || 0;
+  const fixedOpex = parseFloat(pf.monthlyFixedOpex) || 0;
+  const ebitda = revenue - (revenue * cogsPct/100) - fixedOpex;
+  const ebitdaPct = revenue > 0 ? (ebitda/revenue*100) : 0;
+  const paybackDays = (capex > 0 && ebitda > 0) ? Math.round((capex/ebitda) * 30) : null;
+  return { capex, revenue, cogsPct, fixedOpex, ebitda, ebitdaPct, paybackDays };
+}
+
+// Fetches a Storage URL and returns it as a data: URL — PptxGenJS needs actual image
+// bytes (a bare https URL isn't reliably fetchable from inside the generated file),
+// so every photo is pulled down and re-embedded rather than linked.
+async function urlToDataUrl(url){
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=> resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Builds and downloads one PPTX for a single scouting site — title, GeoIQ summary,
+// preliminary financials, every photo attachment embedded as its own slide, and a
+// closing slide linking out to videos/reports/other non-image files. True video
+// embedding is deliberately skipped: encoding a playable video into a pptx means
+// pulling down the full file and re-muxing it, which balloons file size for little
+// benefit when a hyperlink opens the same clip instantly.
+async function generateScoutingSitePpt(site, statusEl){
+  if(!window.PptxGenJS){ throw new Error('The PowerPoint builder did not load — check your connection and try again.'); }
+  if(statusEl) statusEl.textContent = 'Building deck…';
+  const pptx = new window.PptxGenJS();
+  pptx.defineLayout({ name: 'PARADISE', width: 10, height: 5.63 });
+  pptx.layout = 'PARADISE';
+
+  const MAROON = '4B1010', GOLD = 'D68730', CREAM = 'F7F1E6', INK = '2B1A12';
+
+  // Title slide
+  let slide = pptx.addSlide();
+  slide.background = { color: CREAM };
+  slide.addText(escapeHtml(site.locationName) ? site.locationName : site.locationName, { x:0.5, y:1.7, w:9, h:1, fontSize:32, bold:true, color:MAROON, fontFace:'Arial' });
+  slide.addText(site.label || '', { x:0.5, y:2.5, w:9, h:0.6, fontSize:18, color:INK });
+  const meta = SCOUTING_STATUS_META[site.status] || {};
+  slide.addText(`${(board.cities.find(c=>c.code===site.city)||{}).name || site.city} · ${meta.label||site.status} · ${new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}`,
+    { x:0.5, y:3.1, w:9, h:0.5, fontSize:13, color:'8A7268' });
+
+  // Preliminary financials
+  const pf = site.prelimFinancials || {};
+  const calc = computePrelimFinancials(pf);
+  slide = pptx.addSlide();
+  slide.background = { color: 'FFFFFF' };
+  slide.addText('Preliminary Financials', { x:0.5, y:0.4, w:9, h:0.6, fontSize:24, bold:true, color:MAROON });
+  const finRows = [
+    ['Estimated CAPEX', pf.capex ? fmtINR(parseFloat(pf.capex)) : '—'],
+    ['Estimated monthly revenue', pf.monthlyRevenue ? fmtINR(parseFloat(pf.monthlyRevenue)) : '—'],
+    ['Estimated COGS %', pf.cogsPct ? pf.cogsPct+'%' : '—'],
+    ['Estimated monthly fixed opex', pf.monthlyFixedOpex ? fmtINR(parseFloat(pf.monthlyFixedOpex)) : '—'],
+    ['Preliminary monthly EBITDA', fmtINR(calc.ebitda) + ` (${calc.ebitdaPct.toFixed(1)}%)`],
+    ['Preliminary payback', calc.paybackDays ? calc.paybackDays+' days' : '—'],
+  ];
+  slide.addTable(finRows.map(r=>[{text:r[0],options:{bold:true,color:INK}},{text:r[1],options:{color:INK}}]),
+    { x:0.5, y:1.2, w:9, colW:[4.5,4.5], fontSize:14, border:{type:'solid',color:'E8DCC8',pt:1}, autoPage:false });
+  if(statusEl) statusEl.textContent = 'Building deck — added financials…';
+
+  // GeoIQ — spread across a few focused slides rather than one crowded one
+  const g = site.geoiqReport;
+  if(g && g.status === 'done' && g.parsedData){
+    const d = g.parsedData;
+    const bf = g.benchmarkFit;
+
+    // Slide: Overview + Paradise benchmark fit (the single most decision-relevant slide)
+    slide = pptx.addSlide();
+    slide.background = { color: 'FFFFFF' };
+    slide.addText('GeoIQ Site Report — Overview', { x:0.5, y:0.4, w:9, h:0.6, fontSize:24, bold:true, color:MAROON });
+    if(d.summary) slide.addText(d.summary, { x:0.5, y:1.0, w:9, h:0.7, fontSize:13, italic:true, color:'4B5A61' });
+    let ovY = 1.75;
+    const ov = d.overview || {};
+    if(ov.score !== null && ov.score !== undefined){
+      slide.addText(`GeoIQ site score: ${ov.score} / 5`, { x:0.5, y:ovY, w:9, h:0.4, fontSize:15, bold:true, color:INK });
+      ovY += 0.5;
+    }
+    if(bf && (bf.dinein.scored + bf.delivery.scored) > 0){
+      const bfRows = [
+        ['Dine-in fit', `${bf.dinein.pass}/${bf.dinein.scored} of 10 features` + (bf.dinein.pct!==null?` (${bf.dinein.pct}% weighted)`:'')],
+        ['Delivery fit', `${bf.delivery.pass}/${bf.delivery.scored} of 8 features` + (bf.delivery.pct!==null?` (${bf.delivery.pct}% weighted)`:'')],
+      ];
+      slide.addTable(bfRows.map(r=>[{text:r[0],options:{bold:true,color:INK}},{text:r[1],options:{color:INK}}]),
+        { x:0.5, y:ovY, w:9, colW:[3,6], fontSize:13, border:{type:'solid',color:'E8DCC8',pt:1}, autoPage:false });
+      ovY += bfRows.length * 0.4 + 0.3;
+    }
+    if(Array.isArray(d.key_highlights) && d.key_highlights.length){
+      slide.addText(d.key_highlights.map(h=>({text:h, options:{bullet:true, breakLine:true}})),
+        { x:0.5, y:ovY, w:9, h:5.4-ovY, fontSize:12, color:INK });
+    }
+    if(statusEl) statusEl.textContent = 'Building deck — added GeoIQ overview…';
+
+    // Slide: Population, retail indicators, footfall
+    const popRetailRows = [];
+    const p = d.population || {};
+    if(p.hh_total) popRetailRows.push(['Total households', fmtNum(p.hh_total)]);
+    if(p.hh_10l) popRetailRows.push(['Households ₹10L+ income', fmtNum(p.hh_10l) + (p.hh_10l_pct?` (${Math.round(p.hh_10l_pct)}%)`:'')]);
+    if(p.hh_20l) popRetailRows.push(['Households ₹20L+ income', fmtNum(p.hh_20l) + (p.hh_20l_pct?` (${Math.round(p.hh_20l_pct)}%)`:'')]);
+    if(p.affluence !== null && p.affluence !== undefined) popRetailRows.push(['Affluence index', p.affluence.toFixed(2) + (p.affluence_city?` (city ${p.affluence_city.toFixed(2)})`:'')]);
+    if(p.res_rent_sqft) popRetailRows.push(['Residential rent /sq.ft', '₹'+fmtNum(p.res_rent_sqft) + (p.res_rent_sqft_city?` (city ₹${fmtNum(p.res_rent_sqft_city)})`:'')]);
+    const r = d.retail || {};
+    if(r.footfall !== null && r.footfall !== undefined) popRetailRows.push(['Footfall index /100', r.footfall.toFixed(0) + (r.footfall_city?` (city ${r.footfall_city.toFixed(0)})`:'')]);
+    if(r.growth !== null && r.growth !== undefined) popRetailRows.push(['Growth index /100', r.growth.toFixed(0) + (r.growth_city?` (city ${r.growth_city.toFixed(0)})`:'')]);
+    if(r.spending !== null && r.spending !== undefined) popRetailRows.push(['Spending capacity /100', r.spending.toFixed(0) + (r.spending_city?` (city ${r.spending_city.toFixed(0)})`:'')]);
+    if(r.stores !== null && r.stores !== undefined) popRetailRows.push(['Stores nearby', fmtNum(r.stores) + (r.stores_city?` (city avg ${fmtNum(r.stores_city)})`:'')]);
+    if(d.footfall_hourly && Array.isArray(d.footfall_hourly) && d.footfall_hourly.length===24){
+      const peak = d.footfall_hourly.indexOf(Math.max(...d.footfall_hourly));
+      const peakLabel = peak===0?'12 AM':peak<12?`${peak} AM`:peak===12?'12 PM':`${peak-12} PM`;
+      popRetailRows.push(['Peak footfall hour', peakLabel + (d.footfall_month?` (${d.footfall_month})`:'')]);
+    }
+    if(popRetailRows.length){
+      slide = pptx.addSlide();
+      slide.background = { color: 'FFFFFF' };
+      slide.addText('Population & Retail Indicators', { x:0.5, y:0.4, w:9, h:0.6, fontSize:24, bold:true, color:MAROON });
+      slide.addTable(popRetailRows.map(r=>[{text:r[0],options:{bold:true,color:INK}},{text:r[1],options:{color:INK}}]),
+        { x:0.5, y:1.15, w:9, colW:[4.5,4.5], fontSize:12.5, border:{type:'solid',color:'E8DCC8',pt:1}, autoPage:false });
+      if(statusEl) statusEl.textContent = 'Building deck — added population & retail slide…';
+    }
+
+    // Slide: Competition & risk
+    const comp = d.competitors || [], compl = d.complementary || [];
+    const can = d.cannibalisation || {};
+    const compRiskRows = [];
+    if(comp.length){ const names = [...new Set(comp.map(c=>c.name))]; compRiskRows.push(['Competitor outlets', `${comp.length} outlets, ${names.length} brands`]); }
+    if(compl.length) compRiskRows.push(['Complementary outlets nearby', String(compl.length)]);
+    if(can.pct !== null && can.pct !== undefined) compRiskRows.push(['Cannibalisation', can.pct.toFixed(1)+'%']);
+    else if(can.rating) compRiskRows.push(['Cannibalisation', can.rating + (can.active_stores===0?' (unverified — no Paradise stores loaded in GeoIQ)':'')]);
+    if(Array.isArray(d.closures) && d.closures.length){
+      const total = d.closures.reduce((s,c)=>s+(parseFloat(c.count)||0),0);
+      const fnb = d.closures.filter(c=>/^(?!.*internet).*(restaurant|cafe|bakery|dessert|food|qsr|sweet)/i.test(c.category||'')).reduce((s,c)=>s+(parseFloat(c.count)||0),0);
+      compRiskRows.push(['Closures, last 12mo', `${fnb} F&B of ${total} total nearby`]);
+    }
+    if(compRiskRows.length){
+      slide = pptx.addSlide();
+      slide.background = { color: 'FFFFFF' };
+      slide.addText('Competition & Risk', { x:0.5, y:0.4, w:9, h:0.6, fontSize:24, bold:true, color:MAROON });
+      slide.addTable(compRiskRows.map(r=>[{text:r[0],options:{bold:true,color:INK}},{text:r[1],options:{color:INK}}]),
+        { x:0.5, y:1.15, w:9, colW:[4.5,4.5], fontSize:13, border:{type:'solid',color:'E8DCC8',pt:1}, autoPage:false });
+      const compNames = [...new Set(comp.map(c=>c.name))];
+      if(compNames.length) slide.addText('Named competitors: ' + compNames.slice(0,12).join(', ') + (compNames.length>12?', …':''),
+        { x:0.5, y:1.15 + compRiskRows.length*0.4 + 0.3, w:9, h:1.5, fontSize:11, color:'4B5A61' });
+      if(statusEl) statusEl.textContent = 'Building deck — added competition & risk slide…';
+    }
+  }
+
+  // Photos — each embedded as its own slide, fetched and re-encoded as a data URL
+  const attachments = site.attachments || [];
+  const photos = attachments.filter(a => isImageFile(a.name));
+  for(let i=0;i<photos.length;i++){
+    if(statusEl) statusEl.textContent = `Building deck — embedding photo ${i+1} of ${photos.length}…`;
+    try{
+      const dataUrl = await urlToDataUrl(photos[i].url);
+      slide = pptx.addSlide();
+      slide.background = { color: '000000' };
+      slide.addImage({ data: dataUrl, x:0.5, y:0.4, w:9, h:4.4, sizing:{type:'contain', w:9, h:4.4} });
+      slide.addText(photos[i].name, { x:0.5, y:4.9, w:9, h:0.4, fontSize:11, color:'FFFFFF' });
+    }catch(e){
+      console.error('Could not embed photo', photos[i].name, e);
+    }
+  }
+
+  // Linked files — videos, the GeoIQ PDF, and any other non-image attachment, as
+  // clickable links rather than embedded, per the note above.
+  const linkable = [];
+  if(g && g.fileUrl) linkable.push({ label: 'GeoIQ Report — ' + (g.fileName||'PDF'), url: g.fileUrl });
+  attachments.filter(a => !isImageFile(a.name)).forEach(a => linkable.push({ label: a.name, url: a.url }));
+  if(linkable.length){
+    slide = pptx.addSlide();
+    slide.background = { color: 'FFFFFF' };
+    slide.addText('Videos & Linked Files', { x:0.5, y:0.4, w:9, h:0.6, fontSize:24, bold:true, color:MAROON });
+    slide.addText('Tap a link below to open the original file.', { x:0.5, y:1.0, w:9, h:0.4, fontSize:12, color:'8A7268' });
+    slide.addText(linkable.map(l=>({text:l.label, options:{bullet:true, breakLine:true, hyperlink:{url:l.url}, color:'1F5F66'}})),
+      { x:0.5, y:1.5, w:9, h:3.5, fontSize:13 });
+  }
+
+  if(statusEl) statusEl.textContent = 'Saving…';
+  const fname = `${(site.locationName+'_'+site.label).replace(/[^\w@ -]+/g,'').replace(/\s+/g,'_')}_Site_Report.pptx`;
+  await pptx.writeFile({ fileName: fname });
+  if(statusEl) statusEl.textContent = `Done — ${fname} downloaded.`;
+}
+
+function renderPrelimFinancialsSection(site, canEdit){
+  const pf = site.prelimFinancials || { capex:'', monthlyRevenue:'', cogsPct:'', monthlyFixedOpex:'' };
+  const calc = computePrelimFinancials(pf);
+  let html = `<details class="collapse-group" open><summary>Preliminary Financials <span style="font-weight:400;color:var(--sub);font-size:11px;">quick estimate</span></summary>
+    <div class="progress-line" style="margin-top:0;">A rough, flat-month estimate for scouting-stage comparison — not the full P&L model used once this becomes an NSO project.</div>
+    <div class="field"><label>Estimated CAPEX (₹)</label><input id="pfCapex" type="number" value="${escapeHtml(pf.capex||'')}" ${canEdit?'':'disabled'} placeholder="e.g. 6000000"></div>
+    <div class="field"><label>Estimated monthly revenue (₹)</label><input id="pfRevenue" type="number" value="${escapeHtml(pf.monthlyRevenue||'')}" ${canEdit?'':'disabled'} placeholder="e.g. 3500000"></div>
+    <div class="field"><label>Estimated COGS (%)</label><input id="pfCogs" type="number" value="${escapeHtml(pf.cogsPct||'')}" ${canEdit?'':'disabled'} placeholder="e.g. 32"></div>
+    <div class="field"><label>Estimated monthly fixed opex (₹)</label><input id="pfOpex" type="number" value="${escapeHtml(pf.monthlyFixedOpex||'')}" ${canEdit?'':'disabled'} placeholder="e.g. 450000"></div>
+    ${canEdit ? `<div class="btn-row"><button class="btn ghost" id="savePrelimFinBtn">Save &amp; recalculate</button></div>` : ''}
+    <div class="progress-line" style="font-size:13px;font-weight:700;color:var(--ink);margin-top:10px;">
+      Preliminary EBITDA: ${fmtINR(calc.ebitda)}/month (${calc.ebitdaPct.toFixed(1)}%) · Payback: ${calc.paybackDays ? calc.paybackDays+' days' : '—'}
+    </div>
+  </details>`;
+  return html;
+}
+
+
+function openScoutingSiteSheet(siteId){
+  const site = board.scoutingSiteData[siteId];
+  if(!site) return;
+  const body = document.getElementById('sheetBody');
+  const meta = SCOUTING_STATUS_META[site.status] || SCOUTING_STATUS_META.scouting;
+  const myStakeholder = findMyStakeholder();
+  const myId = myStakeholder ? myStakeholder.id : null;
+  const iAmAssigned = myId && (site.assignedTo||[]).includes(myId);
+  const iAmApprover = myId && (board.scoutingApprovers||[]).includes(myId);
+  const canEdit = isAdmin() || iAmAssigned;
+
+  let inner = `
+    <button id="stickyCloseBtn" class="sticky-close-x" aria-label="Close">✕</button>
+    <span class="stage-badge task sheet-badge">${escapeHtml(site.locationName)}</span>
+    <h2>${escapeHtml(site.label)}</h2>
+    <div class="meta">Created by ${escapeHtml(site.createdByName||'—')} · ${timeAgo(site.createdAt)}</div>
+    <div class="stage-pill" style="background:${meta.bg};color:${meta.ink};display:inline-block;margin-bottom:12px;">${escapeHtml(meta.label)}</div>
+  `;
+
+  if(site.status === 'rejected' && site.rejectionRemarks){
+    inner += `<div class="warn">⚠ Rejected by ${escapeHtml(site.rejectedByName||'someone')}: "${escapeAndLinkify(site.rejectionRemarks)}"</div>`;
+  }
+  if(site.status === 'approved'){
+    inner += `<div class="info-box">✓ Approved by ${escapeHtml(site.approvedByName||'someone')} · ${fmtDate(site.approvedAt)} — ready to start as an NSO project.</div>`;
+    inner += renderGeoiqReportSection(site, canEdit);
+    inner += renderPrelimFinancialsSection(site, canEdit);
+  }
+
+  const assignedIds = site.assignedTo || [];
+  const assignedList = assignedIds.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
+  inner += `<details class="collapse-group" open><summary>Assigned to <span style="font-weight:400;color:var(--sub);font-size:11px;">${assignedList.length?assignedList.length+' people':'nobody yet'}</span></summary><div class="field">`;
+  inner += assignedList.length ? `<div class="approver-list">` + assignedList.map(p=>`
+      <div class="approver"><div class="approver-name">${escapeHtml(stakeholderLabel(p))}</div>
+      ${(isAdmin()||iAmAssigned) ? `<button class="remove-x" data-scout-remove-assignee="${p.id}">✕</button>` : ''}</div>`).join('') + `</div>`
+    : `<div class="progress-line">Nobody assigned yet.</div>`;
+  if(isAdmin() || iAmAssigned){
+    inner += personPickerHtml('scoutAssignAdd', board.stakeholders.filter(p=>!assignedIds.includes(p.id)), '+ search and add someone');
+  }
+  inner += `</div></details>`;
+
+  const fields = board.scoutingFields || [];
+  inner += `<details class="collapse-group" open><summary>Scouting Details</summary>`;
+  fields.forEach(f=>{
+    const val = (site.values||{})[f.id] || '';
+    inner += `<div class="field"><label>${escapeHtml(f.label)}</label>`;
+    inner += f.type === 'textarea'
+      ? `<textarea data-scout-field="${f.id}" ${canEdit?'':'disabled'}>${escapeHtml(val)}</textarea>`
+      : `<input data-scout-field="${f.id}" type="text" value="${escapeHtml(val)}" ${canEdit?'':'disabled'}>`;
+    inner += `</div>`;
+  });
+  if(canEdit) inner += `<div class="btn-row"><button class="btn ghost" id="saveScoutFieldsBtn">Save details</button></div>`;
+  inner += `</details>`;
+
+  site.attachments = site.attachments || [];
+  inner += `<details class="collapse-group"><summary>Photos & Documents <span style="font-weight:400;color:var(--sub);font-size:11px;">${site.attachments.length?site.attachments.length+' files':'none yet'}</span></summary>`;
+  if(site.attachments.length){
+    inner += `<div class="approver-list">` + site.attachments.map((a,i)=>{
+      const canDelete = a.uploadedBy===getWho() || isAdmin();
+      const thumb = isImageFile(a.name)
+        ? `<img src="${a.url}" class="attach-thumb" data-scout-preview="${i}" alt="">`
+        : `<div class="attach-file-icon" data-scout-preview="${i}">📄</div>`;
+      return `<div class="approver attachment-row">${thumb}
+        <div class="approver-name" data-scout-preview="${i}" style="cursor:pointer;">${escapeHtml(a.name)}
+        <div class="approver-stamp">${escapeHtml(a.uploadedBy)} · ${timeAgo(a.uploadedAt)}</div></div>
+        ${canDelete?`<button class="remove-x" data-scout-del-attachment="${i}">✕</button>`:''}</div>`;
+    }).join('') + `</div>`;
+  } else { inner += `<div class="progress-line">No files yet.</div>`; }
+  if(canEdit){
+    inner += `<div class="field"><input id="scoutAttachmentFile" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx"></div>
+      <div class="progress-line" style="margin-top:0;">Photos, videos, and documents all go here — the PPT report picks up photos and videos automatically.</div>
+      <div class="btn-row"><button class="btn ghost" id="uploadScoutAttachmentBtn">Upload</button></div>
+      <div id="scoutUploadStatus" class="progress-line"></div>`;
+  }
+  inner += `</details>`;
+
+  inner += `<details class="collapse-group" open><summary>Activity Log <span style="font-weight:400;color:var(--sub);font-size:11px;">${(site.log||[]).length}</span></summary>`;
+  inner += `<div class="log">` + (site.log||[]).slice().reverse().map(l=>`
+    <div class="log-entry"><div>${escapeHtml(l.text)}</div><div class="approver-stamp">${timeAgo(l.at)}</div></div>`).join('') + `</div>`;
+  if(canEdit){
+    inner += `<div class="field" style="margin-top:8px;"><textarea id="scoutNoteField" placeholder="Add a note..."></textarea></div>
+      <div class="btn-row"><button class="btn ghost" id="addScoutNoteBtn">Add note</button></div>`;
+  }
+  inner += `</details>`;
+
+  if(site.status === 'scouting' && iAmAssigned){
+    inner += `<div class="btn-row"><button class="btn primary" id="submitScoutForApprovalBtn">Submit for approval</button></div>`;
+  }
+  if(site.status === 'rejected' && iAmAssigned){
+    inner += `<div class="btn-row"><button class="btn primary" id="resubmitScoutBtn">Revise &amp; resubmit</button></div>`;
+  }
+  if(site.status === 'pending_approval' && iAmApprover){
+    inner += `<div class="btn-row">
+      <button class="btn decline" id="rejectScoutBtn">Reject</button>
+      <button class="btn primary" id="approveScoutBtn">Approve — Ready for NSO</button>
+    </div>`;
+  }
+  if(site.status === 'approved'){
+    inner += `<div class="btn-row"><button class="btn primary" id="startNsoFromScoutBtn">Start NSO Project from this site</button></div>
+      <div class="btn-row"><button class="btn ghost" id="generateSitePptBtn">Generate Site Report (PPT)</button></div>
+      <div id="sitePptStatus" class="progress-line"></div>`;
+  }
+  inner += `<div class="btn-row"><button class="btn ghost" id="closeBtn">Close</button></div>`;
+
+  body.innerHTML = inner;
+  document.getElementById('sheetBackdrop').classList.add('open');
+  document.getElementById('stickyCloseBtn').onclick = closeSheet;
+  wireScoutingSheetActions(site, canEdit, iAmAssigned, iAmApprover);
+}
+
+function wireScoutingSheetActions(site, canEdit, iAmAssigned, iAmApprover){
+  const closeBtn = document.getElementById('closeBtn');
+  if(closeBtn) closeBtn.onclick = closeSheet;
+
+  const addSel = document.getElementById('scoutAssignAdd');
+  if(addSel) addSel.onchange = async ()=>{
+    const id = personPickerSelectedId('scoutAssignAdd', board.stakeholders.filter(p=>!(site.assignedTo||[]).includes(p.id)));
+    if(!id) return;
+    site.assignedTo = site.assignedTo || [];
+    if(!site.assignedTo.includes(id)) site.assignedTo.push(id);
+    const p = board.stakeholders.find(x=>x.id===id);
+    const who = getWho();
+    site.log = site.log || []; site.log.push({ text:`${p?p.name:'Someone'} assigned by ${who}`, by: who, at: Date.now() });
+    site.updatedBy = who; site.updatedAt = Date.now();
+    await saveBoard(); render(); openScoutingSiteSheet(site.id);
+  };
+  document.querySelectorAll('[data-scout-remove-assignee]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      site.assignedTo = (site.assignedTo||[]).filter(x=>x!==btn.dataset.scoutRemoveAssignee);
+      site.updatedBy = getWho(); site.updatedAt = Date.now();
+      await saveBoard(); render(); openScoutingSiteSheet(site.id);
+    });
+  });
+
+  const saveFieldsBtn = document.getElementById('saveScoutFieldsBtn');
+  if(saveFieldsBtn) saveFieldsBtn.onclick = withClickLoading(saveFieldsBtn, 'Working…', async ()=>{
+    site.values = site.values || {};
+    document.querySelectorAll('[data-scout-field]').forEach(elx=>{ site.values[elx.dataset.scoutField] = elx.value.trim(); });
+    const who = getWho();
+    site.log = site.log || []; site.log.push({ text:`Details updated by ${who}`, by: who, at: Date.now() });
+    site.updatedBy = who; site.updatedAt = Date.now();
+    await saveBoard(); render(); openScoutingSiteSheet(site.id);
+  });
+
+  const uploadBtn = document.getElementById('uploadScoutAttachmentBtn');
+  if(uploadBtn) uploadBtn.onclick = withClickLoading(uploadBtn, 'Working…', async ()=>{
+    const fileInput = document.getElementById('scoutAttachmentFile');
+    const files = Array.from(fileInput.files);
+    const statusEl = document.getElementById('scoutUploadStatus');
+    if(!files.length){ statusEl.textContent = 'Choose at least one file first.'; return; }
+    site.attachments = site.attachments || [];
+    let uploaded = 0;
+    for(const file of files){
+      statusEl.textContent = `Uploading ${uploaded+1} of ${files.length}...`;
+      try{
+        const path = `scouting/${site.id}/${Date.now()}_${file.name}`;
+        const ref = storage.ref(path);
+        await ref.put(file);
+        const url = await ref.getDownloadURL();
+        site.attachments.push({ name: file.name, url, path, uploadedBy: getWho(), uploadedAt: Date.now() });
+        uploaded++;
+      }catch(e){
+        statusEl.textContent = `Upload failed on "${file.name}": ` + (e.message || e.code);
+        if(uploaded > 0) await saveBoard();
+        return;
+      }
+    }
+    const who = getWho();
+    site.log = site.log || []; site.log.push({ text:`${uploaded} file(s) uploaded by ${who}`, by: who, at: Date.now() });
+    site.updatedBy = who; site.updatedAt = Date.now();
+    await saveBoard(); render(); openScoutingSiteSheet(site.id);
+  });
+  document.querySelectorAll('[data-scout-preview]').forEach(elx=>{
+    elx.onclick = ()=>{ const a = site.attachments[parseInt(elx.dataset.scoutPreview)]; if(a) openFilePreview(a.url, a.name); };
+  });
+  document.querySelectorAll('[data-scout-del-attachment]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const i = parseInt(btn.dataset.scoutDelAttachment);
+      const a = site.attachments[i];
+      if(!a) return;
+      if(!(a.uploadedBy === getWho() || isAdmin())) return;
+      if(!window.confirm(`Delete "${a.name}"? This can't be undone.`)) return;
+      try{ if(a.path) await storage.ref(a.path).delete(); }catch(e){ console.error('storage delete failed', e); }
+      site.attachments.splice(i,1);
+      await saveBoard(); render(); openScoutingSiteSheet(site.id);
+    });
+  });
+
+  const addNoteBtn = document.getElementById('addScoutNoteBtn');
+  if(addNoteBtn) addNoteBtn.onclick = withClickLoading(addNoteBtn, 'Working…', async ()=>{
+    const field = document.getElementById('scoutNoteField');
+    const text = field ? field.value.trim() : '';
+    if(!text) return;
+    const who = getWho();
+    site.log = site.log || []; site.log.push({ text, by: who, byId: (findMyStakeholder()||{}).id || null, at: Date.now() });
+    site.updatedBy = who; site.updatedAt = Date.now();
+    await saveBoard(); render(); openScoutingSiteSheet(site.id);
+  });
+
+  const submitBtn = document.getElementById('submitScoutForApprovalBtn');
+  if(submitBtn) submitBtn.onclick = withClickLoading(submitBtn, 'Working…', async ()=>{
+    if(!(board.scoutingApprovers||[]).length){
+      window.alert('No Scouting Approvers are configured yet — ask an Admin to add one in Admin → Scouting Approvers.');
+      return;
+    }
+    const who = getWho();
+    site.status = 'pending_approval';
+    site.submittedBy = who; site.submittedAt = Date.now();
+    site.log = site.log || []; site.log.push({ text:`Submitted for approval by ${who}`, by: who, at: Date.now() });
+    site.updatedBy = who; site.updatedAt = Date.now();
+    await saveBoard(); render(); closeSheet();
+  });
+  const resubmitBtn = document.getElementById('resubmitScoutBtn');
+  if(resubmitBtn) resubmitBtn.onclick = withClickLoading(resubmitBtn, 'Working…', async ()=>{
+    const who = getWho();
+    site.status = 'pending_approval';
+    site.rejectionRemarks = '';
+    site.log = site.log || []; site.log.push({ text:`Revised and resubmitted by ${who}`, by: who, at: Date.now() });
+    site.updatedBy = who; site.updatedAt = Date.now();
+    await saveBoard(); render(); closeSheet();
+  });
+
+  const approveBtn = document.getElementById('approveScoutBtn');
+  if(approveBtn) approveBtn.onclick = withClickLoading(approveBtn, 'Working…', async ()=>{
+    if(!window.confirm(`Approve "${site.label}" as Ready for NSO?`)) return;
+    try{
+      const res = await approveScoutingSiteFn({ siteId: site.id, approve: true });
+      if(res && res.data){ site.status = res.data.status; site.log = res.data.log; }
+      render(); closeSheet();
+    }catch(e){ window.alert(e.message || 'Could not approve — try again.'); }
+  });
+  const rejectBtn = document.getElementById('rejectScoutBtn');
+  if(rejectBtn) rejectBtn.onclick = withClickLoading(rejectBtn, 'Working…', async ()=>{
+    const remarks = window.prompt(`Reason for rejecting "${site.label}"?`) || '';
+    try{
+      const res = await approveScoutingSiteFn({ siteId: site.id, approve: false, remarks });
+      if(res && res.data){ site.status = res.data.status; site.log = res.data.log; }
+      render(); closeSheet();
+    }catch(e){ window.alert(e.message || 'Could not reject — try again.'); }
+  });
+
+  const startNsoBtn = document.getElementById('startNsoFromScoutBtn');
+  if(startNsoBtn) startNsoBtn.onclick = ()=>{
+    closeSheet();
+    currentView = 'templates'; render();
+    // Pre-fills the NSO template's "new project" form from this scouting record — a
+    // convenience jump, not an automatic project creation, so BD still reviews and
+    // confirms details before anything is actually created in the tracker.
+    setTimeout(()=>{
+      const tmpl = board.templates.find(t=>t.id==='tmpl_nso');
+      if(!tmpl) return;
+      const nameInput = document.getElementById(`newProjName_${tmpl.id}`);
+      const citySelect = document.getElementById(`newProjCity_${tmpl.id}`);
+      if(nameInput) nameInput.value = `${site.locationName} — ${site.label}`;
+      if(citySelect) citySelect.value = site.city;
+      if(nameInput) nameInput.scrollIntoView({block:'center'});
+    }, 50);
+  };
+
+  const uploadGeoiqBtn = document.getElementById('uploadGeoiqBtn') || document.getElementById('retryGeoiqBtn');
+  if(uploadGeoiqBtn) uploadGeoiqBtn.onclick = withClickLoading(uploadGeoiqBtn, 'Working…', async ()=>{
+    const statusEl = document.getElementById('geoiqUploadStatus');
+    const isRetry = uploadGeoiqBtn.id === 'retryGeoiqBtn';
+    let filePath = site.geoiqReport && site.geoiqReport.filePath;
+    if(!isRetry){
+      const fileInput = document.getElementById('geoiqFile');
+      const file = fileInput && fileInput.files[0];
+      if(!file){ if(statusEl) statusEl.textContent = 'Choose a PDF first.'; return; }
+      if(statusEl) statusEl.textContent = 'Uploading…';
+      try{
+        const path = `scouting/${site.id}/geoiq_${Date.now()}_${file.name}`;
+        const ref = storage.ref(path);
+        await ref.put(file);
+        const url = await ref.getDownloadURL();
+        filePath = path;
+        site.geoiqReport = { fileUrl: url, filePath: path, fileName: file.name, uploadedBy: getWho(), uploadedAt: Date.now(), status: 'analyzing', parsedData: null, error: null };
+      }catch(e){
+        if(statusEl) statusEl.textContent = 'Upload failed: ' + (e.message || e.code);
+        return;
+      }
+    } else {
+      site.geoiqReport.status = 'analyzing';
+      site.geoiqReport.error = null;
+    }
+    await saveBoard(); render(); openScoutingSiteSheet(site.id);
+    try{
+      const res = await analyzeGeoiqReportFn({ siteId: site.id, filePath });
+      if(res && res.data){
+        site.geoiqReport.status = res.data.status;
+        site.geoiqReport.parsedData = res.data.parsedData;
+        site.geoiqReport.error = res.data.error;
+      }
+    }catch(e){
+      site.geoiqReport.status = 'failed';
+      site.geoiqReport.error = e.message || 'Could not read the report.';
+    }
+    render();
+    if(document.getElementById('sheetBackdrop').classList.contains('open')) openScoutingSiteSheet(site.id);
+  });
+
+  const savePrelimFinBtn = document.getElementById('savePrelimFinBtn');
+  if(savePrelimFinBtn) savePrelimFinBtn.onclick = withClickLoading(savePrelimFinBtn, 'Working…', async ()=>{
+    site.prelimFinancials = {
+      capex: document.getElementById('pfCapex').value,
+      monthlyRevenue: document.getElementById('pfRevenue').value,
+      cogsPct: document.getElementById('pfCogs').value,
+      monthlyFixedOpex: document.getElementById('pfOpex').value,
+      updatedBy: getWho(), updatedAt: Date.now(),
+    };
+    await saveBoard(); render(); openScoutingSiteSheet(site.id);
+  });
+
+  const generatePptBtn = document.getElementById('generateSitePptBtn');
+  if(generatePptBtn) generatePptBtn.onclick = withClickLoading(generatePptBtn, 'Building…', async ()=>{
+    const statusEl = document.getElementById('sitePptStatus');
+    try{
+      await generateScoutingSitePpt(site, statusEl);
+    }catch(e){
+      console.error('PPT generation failed', e);
+      if(statusEl) statusEl.textContent = 'Could not build the PPT: ' + (e.message || e);
+    }
+  });
 }
 
 function renderMyTasks(){
@@ -2031,6 +2951,43 @@ function canSeeSite(site){
 }
 function visibleSites(){ return board.sites.filter(site => !site.deletedAt && canSeeSite(site)); }
 
+// ---------- Scouting visibility ----------
+// A site is visible to: Admin, whoever created it, anyone assigned to it, and — once
+// it's actually been submitted — anyone on the Scouting Approvers list (an approver
+// shouldn't see a BD's early-stage draft before it's ready for them, but does need to
+// see anything they've been asked to act on, and keep seeing it after they've acted).
+function canSeeScoutingSite(site){
+  if(isAdmin()) return true;
+  if(!currentUser) return false;
+  const me = findMyStakeholder();
+  const myId = me ? me.id : null;
+  if(site.createdBy === myId) return true;
+  if(myId && (site.assignedTo||[]).includes(myId)) return true;
+  if(myId && site.status !== 'scouting' && (board.scoutingApprovers||[]).includes(myId)) return true;
+  return false;
+}
+function canSeeScoutingLocation(loc){
+  if(isAdmin()) return true;
+  const me = findMyStakeholder();
+  if(me && loc.createdBy === me.id) return true;
+  return Object.values(board.scoutingSiteData||{}).some(s=>s.locationId===loc.id && canSeeScoutingSite(s));
+}
+function visibleScoutingLocations(){
+  return (board.scoutingLocations||[]).filter(l=>!l.archivedAt && canSeeScoutingLocation(l));
+}
+function scoutingSitesForLocation(locId){
+  return Object.values(board.scoutingSiteData||{}).filter(s=>s.locationId===locId && canSeeScoutingSite(s))
+    .sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+}
+const SCOUTING_STATUS_META = {
+  scouting:         { label:'Scouting',            bg:'var(--task-bg)', ink:'var(--task-ink)' },
+  pending_approval: { label:'Pending Approval',     bg:'var(--appr-bg)', ink:'var(--appr-ink)' },
+  approved:         { label:'Approved — Ready for NSO', bg:'var(--done-bg)', ink:'var(--done)' },
+  rejected:         { label:'Rejected',             bg:'var(--gate-bg)', ink:'var(--gate-ink)' },
+};
+
+
+
 function renderTemplatesView(){
   const el = document.getElementById('templatesView');
   const me = currentUser ? currentUser.email : null;
@@ -2163,6 +3120,20 @@ function renderTemplatesView(){
         <div class="field"><label>TAT — min days</label><input id="newStageTatMin" type="number" placeholder="e.g. 0"></div>
         <div class="field"><label>TAT — max days</label><input id="newStageTatMax" type="number" placeholder="e.g. 7"></div>
         <div class="btn-row"><button class="btn primary" id="addStageBtn">Add stage at the end</button></div>
+
+        <div class="field" style="margin-top:16px;border-top:1px dashed var(--line);padding-top:14px;">
+          <label>Upload the whole SLA from a spreadsheet</label>
+          <div class="progress-line" style="margin-top:0;">Export what's live now, edit it in Excel, upload it back — the file becomes the pipeline. A stage whose <b>Stage Name</b> matches one already in the pipeline keeps its existing ID, so no project loses the progress recorded against it; only genuinely new names get new IDs, and names you drop stop showing (their data stays saved).</div>
+          <div class="progress-line" style="margin-top:4px;">Columns: Stage Name, Type, Page, Owner, TAT Min, TAT Max, CK Days, 1.0 Days, 2.0 Days, Applies To Formats, Parallel Group, Bangalore Only, Requires Assignment, Requires Approval, Description.</div>
+          <div class="progress-line" style="margin-top:4px;">The three <b>Days</b> columns are that stage's own TAT for each format. Leave all three blank to use the flat TAT Min/Max instead. <b>Applies To Formats</b> limits a stage to certain formats (e.g. <code>F10, F20</code>) — blank means every format.</div>
+          <div class="btn-row">
+            <button type="button" class="btn ghost" id="exportSlaBtn">Export current SLA</button>
+            <button type="button" class="btn ghost" id="downloadSampleSla">Sample template</button>
+          </div>
+          <input type="file" id="slaBulkFile" accept=".csv,.xlsx,.xls">
+          <div class="btn-row"><button class="btn primary" id="slaBulkBtn">Import SLA</button></div>
+          <div id="slaBulkStatus" class="progress-line"></div>
+        </div>
       </details>
     </div>`;
 
@@ -2200,6 +3171,37 @@ function renderTemplatesView(){
         </select></div>
         <div class="field"><label><input type="checkbox" id="newCtFieldApproval" checked style="width:auto;"> Requires approval</label></div>
         <div class="btn-row"><button class="btn primary" id="addCtFieldBtn">Add field at the end</button></div>
+      </details>
+    </div>`;
+
+    // Scouting field list — same pattern, gated the same way, no approval flag needed
+    // since scouting approval is a whole-site action, not per-field.
+    const scoutFields = board.scoutingFields || [];
+    html += `<div class="admin-section">
+      <details class="collapse-group" data-acc-key="scout-fields">
+        <summary>Scouting Fields <span style="font-weight:400;color:var(--sub);font-size:11px;">${scoutFields.length}</span></summary>
+        <div class="sub" style="margin-top:0;">The field list every scouting site's record uses. Add, remove, or reorder here — changes apply to every site going forward.</div>
+        ${scoutFields.map((f,i)=>`
+          <div class="admin-row" style="flex-wrap:wrap;">
+            <div style="flex:1 1 100%;">
+              <input data-scout-field-edit-label="${f.id}" value="${escapeHtml(f.label)}" style="font-weight:600;margin-bottom:6px;">
+              <select data-scout-field-edit-type="${f.id}" style="width:auto;font-size:11px;">
+                <option value="text" ${f.type==='text'?'selected':''}>Short text</option>
+                <option value="textarea" ${f.type==='textarea'?'selected':''}>Long text</option>
+              </select>
+              <button class="btn ghost" data-scout-field-move-up="${f.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===0?'disabled':''}>↑</button>
+              <button class="btn ghost" data-scout-field-move-down="${f.id}" style="width:auto;font-size:11px;padding:6px 10px;" ${i===scoutFields.length-1?'disabled':''}>↓</button>
+              <button class="remove-x" data-scout-field-delete="${f.id}">✕</button>
+            </div>
+          </div>`).join('')}
+        <div class="field" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;">
+          <label>New field label</label><input id="newScoutFieldLabel" placeholder="e.g. Power Load Available">
+        </div>
+        <div class="field"><label>Type</label><select id="newScoutFieldType">
+          <option value="text">Short text</option>
+          <option value="textarea">Long text</option>
+        </select></div>
+        <div class="btn-row"><button class="btn primary" id="addScoutFieldBtn">Add field at the end</button></div>
       </details>
     </div>`;
 
@@ -2353,6 +3355,163 @@ function renderTemplatesView(){
     await renumberAndSave();
   });
 
+  // ---- SLA spreadsheet round-trip (export → edit in Excel → import) ----
+  // One shared column list so export, sample, and import can never disagree about
+  // what the file looks like.
+  const SLA_COLUMNS = ['Stage Name','Type','Page','Owner','TAT Min','TAT Max','CK Days','1.0 Days','2.0 Days','Applies To Formats','Parallel Group','Bangalore Only','Requires Assignment','Requires Approval','Description'];
+  const SLA_TYPES = ['task','approval','gate','checklist','commercial-terms'];
+  const SLA_FORMAT_KEYS = { 'CK':'CK', 'F10':'F10', 'F20':'F20', '1.0':'F10', '2.0':'F20', '1.0 FORMAT':'F10', '2.0 FORMAT':'F20', 'CK & KIOSKS':'CK', 'KIOSK':'CK' };
+  const stageToSlaRow = (st)=>[
+    st.title || '',
+    st.type || 'task',
+    st.page || 'project-flow',
+    st.owner || '',
+    st.tatMinDays !== undefined ? st.tatMinDays : '',
+    st.tatMaxDays !== undefined ? st.tatMaxDays : '',
+    (st.tatByFormat && st.tatByFormat.CK) ? st.tatByFormat.CK.max : '',
+    (st.tatByFormat && st.tatByFormat.F10) ? st.tatByFormat.F10.max : '',
+    (st.tatByFormat && st.tatByFormat.F20) ? st.tatByFormat.F20.max : '',
+    st.formats ? st.formats.join(', ') : '',
+    st.parallelGroup || '',
+    st.bangaloreOnly ? 'yes' : 'no',
+    st.requiresAssignment ? 'yes' : 'no',
+    st.requiresApproval ? 'yes' : 'no',
+    st.desc || '',
+  ];
+  const exportSlaBtn = document.getElementById('exportSlaBtn');
+  if(exportSlaBtn) exportSlaBtn.onclick = ()=>{
+    downloadSampleCsv(SLA_COLUMNS, STAGES.map(stageToSlaRow), 'nso-sla-current.csv');
+  };
+  const downloadSampleSla = document.getElementById('downloadSampleSla');
+  if(downloadSampleSla) downloadSampleSla.onclick = ()=>{
+    downloadSampleCsv(SLA_COLUMNS, [
+      ['Pre-Feasibility & Site Mail Proposal','task','project-flow','BD','0','0','','','','','','no','yes','no','Pre Feasibility Form filed and the site mail circulated the same day.'],
+      ['Site Visit + Sign-Off','approval','project-flow','Cross-functional panel','0','10','','','','','','no','no','yes','All panel members sign off — no partial approvals.'],
+      ['Electrical Load Confirmation','gate','project-flow','Landlord + Ayush','0','14','','','','','g1','yes','yes','no','Landlord confirms load in writing before LOI.'],
+      ['Crew Hiring Drive Starts','task','execution','HR','19','19','10','19','26','','postloi','no','yes','no','Days counted from Design Start.'],
+      ['Kitchen Equipment','task','execution','Sourcing','31','31','','31','46','F10, F20','postloi','no','yes','no','Not applicable to CK & Kiosks.'],
+    ], 'sample-sla.csv');
+  };
+  const slaBulkBtn = document.getElementById('slaBulkBtn');
+  if(slaBulkBtn) slaBulkBtn.onclick = withClickLoading(slaBulkBtn, 'Importing…', async ()=>{
+    const file = document.getElementById('slaBulkFile').files[0];
+    const statusEl = document.getElementById('slaBulkStatus');
+    if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
+    try{
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+      if(!rows.length){ statusEl.textContent = 'That file has no rows.'; return; }
+
+      // Match on name so a re-upload keeps each stage's existing ID — that's what stops
+      // every project's recorded progress from being orphaned on a routine SLA edit.
+      const byTitle = {};
+      STAGES.forEach(st=>{ byTitle[(st.title||'').trim().toLowerCase()] = st; });
+      let nextId = STAGES.length ? Math.max(...STAGES.map(x=>x.id)) + 1 : 1;
+      const usedIds = new Set();
+      const allocId = ()=>{ while(usedIds.has(nextId) || STAGES.some(x=>x.id===nextId)) nextId++; usedIds.add(nextId); return nextId++; };
+
+      const num = v => { const n = parseInt(String(v).trim()); return isNaN(n) ? null : n; };
+      const yes = v => /^(y|true|1)/i.test(String(v).trim());
+      const has = v => String(v == null ? '' : v).trim() !== '';
+
+      const newStages = [];
+      const problems = [];
+      let kept = 0, added = 0;
+
+      rows.forEach((row, idx)=>{
+        const title = String(row['Stage Name']||'').trim();
+        if(!title) return; // silently skip blank spacer rows
+        const rowNo = idx + 2; // +1 for header, +1 for 1-based
+
+        let type = String(row['Type']||'task').trim().toLowerCase();
+        if(!SLA_TYPES.includes(type)){ problems.push(`Row ${rowNo} ("${title}"): unknown Type "${type}" — treated as task.`); type = 'task'; }
+
+        let page = String(row['Page']||'project-flow').trim().toLowerCase();
+        if(page !== 'execution') page = 'project-flow';
+
+        const existing = byTitle[title.toLowerCase()];
+        if(existing) kept++; else added++;
+
+        const tatMinDays = num(row['TAT Min']) !== null ? num(row['TAT Min']) : 0;
+        const tatMaxDays = num(row['TAT Max']) !== null ? num(row['TAT Max']) : 0;
+
+        // Per-format days — each becomes that stage's own {min,max} for that format.
+        const fmtDays = { CK: num(row['CK Days']), F10: num(row['1.0 Days']), F20: num(row['2.0 Days']) };
+        let tatByFormat = null;
+        Object.keys(fmtDays).forEach(k=>{
+          if(fmtDays[k] !== null){ tatByFormat = tatByFormat || {}; tatByFormat[k] = { min: fmtDays[k], max: fmtDays[k] }; }
+        });
+
+        let formats = null;
+        if(has(row['Applies To Formats'])){
+          const parsed = String(row['Applies To Formats']).split(',').map(x=>{
+            const key = x.trim().toUpperCase();
+            return SLA_FORMAT_KEYS[key] || null;
+          }).filter(Boolean);
+          const uniq = [...new Set(parsed)];
+          if(uniq.length && uniq.length < 3) formats = uniq;
+          else if(!uniq.length) problems.push(`Row ${rowNo} ("${title}"): couldn't read "Applies To Formats" — treated as all formats.`);
+        }
+
+        // Blank flag columns fall back to the same type-based defaults used everywhere
+        // else, so a lightly-filled spreadsheet still produces sane stages.
+        let requiresAssignment = has(row['Requires Assignment']) ? yes(row['Requires Assignment']) : (type === 'approval' ? false : true);
+        let requiresApproval  = has(row['Requires Approval'])  ? yes(row['Requires Approval'])  : (type === 'approval');
+        if(type === 'commercial-terms' || type === 'checklist'){ requiresAssignment = false; requiresApproval = false; }
+
+        const st = {
+          id: existing ? existing.id : allocId(),
+          num: '00',
+          title,
+          type,
+          page,
+          owner: String(row['Owner']||'').trim(),
+          tatMinDays, tatMaxDays,
+          desc: String(row['Description']||'').trim(),
+          requiresAssignment, requiresApproval,
+        };
+        if(tatByFormat) st.tatByFormat = tatByFormat;
+        if(formats) st.formats = formats;
+        if(has(row['Parallel Group'])) st.parallelGroup = String(row['Parallel Group']).trim();
+        if(yes(row['Bangalore Only'])) st.bangaloreOnly = true;
+        // Carry over anything the spreadsheet doesn't model — a stage's warning text and
+        // its rework target only exist in code, and losing them on a routine SLA edit
+        // would quietly drop a hard gate's warning or break its send-back behaviour.
+        if(existing){
+          if(existing.warning) st.warning = existing.warning;
+          if(existing.reworkTo !== undefined) st.reworkTo = existing.reworkTo;
+          if(existing.duration) st.duration = existing.duration;
+        }
+        newStages.push(st);
+      });
+
+      if(!newStages.length){ statusEl.textContent = 'No usable rows found — every row needs a Stage Name.'; return; }
+
+      const removed = STAGES.filter(st=>!newStages.some(n=>n.id===st.id));
+      const summary = `Replace the pipeline with ${newStages.length} stage(s) from this file?\n\n`
+        + `• ${kept} matched an existing stage and keep their ID (progress preserved)\n`
+        + `• ${added} are new\n`
+        + `• ${removed.length} currently in the pipeline aren't in the file and will stop showing`
+        + (removed.length ? `:\n   ${removed.map(r=>r.title).join('\n   ')}` : '')
+        + `\n\nTheir saved data is never erased — it just stops being displayed.`;
+      if(!window.confirm(summary)) { statusEl.textContent = 'Import cancelled — nothing changed.'; return; }
+
+      STAGES = newStages;
+      board.nsoStages = newStages;
+      STAGES.forEach((st,i)=>{ st.num = String(i+2).padStart(2,'0'); });
+      try{
+        await saveStagePipelineFn({ stages: STAGES });
+      }catch(e){ statusEl.textContent = 'Could not save: ' + (e.message || e); return; }
+
+      statusEl.textContent = `Imported ${newStages.length} stage(s) — ${kept} kept their ID, ${added} new, ${removed.length} no longer shown.`
+        + (problems.length ? ` ${problems.length} note(s): ` + problems.join(' ') : '');
+      render();
+    }catch(e){
+      statusEl.textContent = 'Import failed: ' + (e.message || e);
+    }
+  });
+
   const saveCtFields = async ()=>{
     try{
       await saveBoard();
@@ -2402,6 +3561,51 @@ function renderTemplatesView(){
     board.commercialTermsFields.push({ id: uid('ctf'), label, type, approvalRequired });
     document.getElementById('newCtFieldLabel').value = '';
     await saveCtFields();
+  });
+
+  const saveScoutFields = async ()=>{
+    try{ await saveBoard(); }catch(e){ window.alert('Could not save the field list — try again.'); }
+    render();
+  };
+  el.querySelectorAll('[data-scout-field-edit-label]').forEach(inp=>{
+    inp.onchange = ()=>{ const f = board.scoutingFields.find(x=>x.id===inp.dataset.scoutFieldEditLabel); if(f) f.label = inp.value.trim(); saveScoutFields(); };
+  });
+  el.querySelectorAll('[data-scout-field-edit-type]').forEach(sel=>{
+    sel.onchange = ()=>{ const f = board.scoutingFields.find(x=>x.id===sel.dataset.scoutFieldEditType); if(f) f.type = sel.value; saveScoutFields(); };
+  });
+  el.querySelectorAll('[data-scout-field-move-up]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const sf = board.scoutingFields;
+      const i = sf.findIndex(x=>x.id===btn.dataset.scoutFieldMoveUp);
+      if(i > 0){ [sf[i-1], sf[i]] = [sf[i], sf[i-1]]; await saveScoutFields(); }
+    });
+  });
+  el.querySelectorAll('[data-scout-field-move-down]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const sf = board.scoutingFields;
+      const i = sf.findIndex(x=>x.id===btn.dataset.scoutFieldMoveDown);
+      if(i < sf.length-1){ [sf[i], sf[i+1]] = [sf[i+1], sf[i]]; await saveScoutFields(); }
+    });
+  });
+  el.querySelectorAll('[data-scout-field-delete]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const sf = board.scoutingFields;
+      const f = sf.find(x=>x.id===btn.dataset.scoutFieldDelete);
+      if(!f) return;
+      if(!window.confirm(`Remove "${f.label}"? Any value already entered for it on existing scouting sites stays saved, it just won't show on the form anymore.`)) return;
+      const idx = sf.findIndex(x=>x.id===btn.dataset.scoutFieldDelete);
+      sf.splice(idx, 1);
+      await saveScoutFields();
+    });
+  });
+  const addScoutFieldBtn = document.getElementById('addScoutFieldBtn');
+  if(addScoutFieldBtn) addScoutFieldBtn.onclick = withClickLoading(addScoutFieldBtn, 'Working…', async ()=>{
+    const label = document.getElementById('newScoutFieldLabel').value.trim();
+    if(!label) return;
+    const type = document.getElementById('newScoutFieldType').value;
+    board.scoutingFields.push({ id: uid('scf'), label, type });
+    document.getElementById('newScoutFieldLabel').value = '';
+    await saveScoutFields();
   });
 
   const savePlLists = async ()=>{
@@ -2609,94 +3813,201 @@ function renderProjectList(){
   });
 }
 
-function renderDashboardView(){
-  const el = document.getElementById('dashboardView');
-  // Company-wide — every live project, not just the ones this signed-in person happens
-  // to be assigned to (that's what the Tracker's own project list is for).
-  const sites = board.sites.filter(s => !s.deletedAt && s.status !== 'draft' && !(storeState(s.id)||{}).projectClosed);
-  let html = `<div class="admin-section">
-    <h3>All Projects</h3>
-    <div class="sub">${sites.length} live project${sites.length===1?'':'s'} across every site. Tap one to open it.</div>
-  </div>`;
+// One place builds the tracker matrix, and both the on-screen grid and the Excel export
+// read from it — so what you download is provably the same thing you were looking at,
+// not a second calculation that can drift.
+function buildTrackerMatrix(){
+  const sites = board.sites
+    .filter(s => !s.deletedAt && s.status !== 'draft' && canSeeSite(s));
+  // Due dates are recomputed live from real progress, never read from a stale snapshot —
+  // this is what keeps the grid self-maintaining instead of something anyone re-keys.
+  sites.forEach(site => recalculateDueDates(site.id));
 
-  if(sites.length === 0){
-    html += `<div class="empty-note">No live projects right now.</div>`;
-  }
+  const stages = STAGES.filter(st => dashboardPageFilter === 'all' || (st.page||'project-flow') === dashboardPageFilter);
 
-  sites.forEach(site=>{
+  const rows = sites.map(site=>{
     const s = storeState(site.id);
-    if(!s) return;
-    recalculateDueDates(site.id); // dashboard shows every project, not just the one currently open — keep due dates fresh for each
-    const curStage = STAGES.find(x=>x.id===s.current);
-    const curD = s.stageData[s.current];
-    const curT = curStage ? stageTiming(curStage, curD, site.id) : null;
-    let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `${curStage.num} — ${curStage.title}` : '';
-    {
-      const pStatus = getProjectStatus(site, s);
-      pillBg = pStatus.bg; pillInk = pStatus.ink;
-      if(pStatus.status === 'completed') label = 'Store opened';
-      else if(pStatus.status === 'dropped') label = 'Dropped';
-    }
-    const notStartedButPastDue = !curT && curD && curD.dueDate && Date.now() > curD.dueDate;
+    const status = s.projectClosed
+      ? { label:'Closed', bg:'var(--done-bg)', ink:'var(--done)' }
+      : getProjectStatus(site, s);
 
-    let timingBit = '';
-    if(curT) timingBit = curT.isOverdue ? `${curT.overdueDays}d overdue` : `Day ${curT.elapsedDays} of ${fmtTatRange(curT.tatMin, curT.tatMax)} TAT`;
-    else if(notStartedButPastDue) timingBit = `${Math.floor((Date.now()-curD.dueDate)/86400000)}d overdue — not started`;
-    else if(curD && curD.dueDate) timingBit = `Projected due ${new Date(curD.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
-
-    // Who's actually responsible for the current stage right now.
-    const assignedNames = curD ? (curD.assignedTo||[]).map(id=>{
-      const p = board.stakeholders.find(x=>x.id===id);
-      return p ? p.name : null;
-    }).filter(Boolean) : [];
-    const assignedText = assignedNames.length ? assignedNames.join(', ') : 'Unassigned';
-
-    // The stage immediately before this one — what was just completed, and when. If it
-    // was part of a parallel pair, show whichever of the two actually finished last,
-    // since that's the one that determined when the pipeline could move forward.
-    const curIdx = STAGES.findIndex(x=>x.id===s.current);
-    let prevBit = '';
-    if(curIdx > 0){
-      const prevStage = STAGES[curIdx-1];
-      let group = [prevStage];
-      if(prevStage.parallelGroup){
-        group = STAGES.filter(x=>x.parallelGroup===prevStage.parallelGroup);
+    let done = 0, applicable = 0;
+    const cells = stages.map(st=>{
+      const d = s.stageData[st.id];
+      if(!d) return { state:'none', plan:null, actual:null };
+      if(d.status === 'skip') return { state:'skip', plan:null, actual:null };
+      applicable++;
+      const plan = d.dueDate || null;
+      const actual = (d.status === 'done') ? (d.updatedAt || null) : null;
+      let state;
+      if(d.status === 'done'){
+        done++;
+        // "Late" is judged against the plan date the tracker itself projected, so a
+        // stage that finished after a slipped predecessor isn't unfairly marked late.
+        // Stages ahead of P&L never get a projected date at all (the projection starts
+        // there), so those are just "done" — calling them on-time would be claiming
+        // they beat a deadline that never existed.
+        state = plan ? ((actual && actual > plan) ? 'late' : 'ontime') : 'done';
+      } else {
+        const t = stageTiming(st, d, site.id);
+        const overdue = (t && t.isOverdue) || (!t && plan && Date.now() > plan);
+        state = overdue ? 'overdue' : ((d.status === 'active' || d.status === 'awaiting_approval') ? 'active' : 'pending');
       }
-      let latestDone = null;
-      let anySkip = false, anyPending = false;
-      group.forEach(gst=>{
-        const gd = s.stageData[gst.id];
-        if(!gd) return;
-        if(gd.status==='done'){ if(!latestDone || (gd.updatedAt||0) > latestDone.at) latestDone = {stage:gst, at: gd.updatedAt||0}; }
-        else if(gd.status==='skip') anySkip = true;
-        else anyPending = true;
-      });
-      if(latestDone){
-        prevBit = `Last: ${latestDone.stage.num} · ${latestDone.stage.title} — completed ${new Date(latestDone.at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
-      } else if(anySkip && !anyPending){
-        prevBit = `Last: ${group.map(g=>g.num).join('/')} — skipped`;
-      }
-    }
+      return { state, plan, actual, status: d.status };
+    });
 
-    html += `<div class="admin-row" data-open-dash-project="${site.id}" style="cursor:pointer;flex-wrap:wrap;">
-      <div style="flex:1 1 100%;">
-        <div class="admin-row-main">${escapeHtml(site.name)}</div>
-        <div class="admin-row-sub">${escapeHtml(FORMATS[site.format] ? FORMATS[site.format].label : '')} · ${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)}${timingBit ? ' · '+escapeHtml(timingBit) : ''}</div>
-        <div class="admin-row-sub" style="margin-top:2px;">Assigned: ${escapeHtml(assignedText)}${prevBit ? ' · '+escapeHtml(prevBit) : ''}</div>
-      </div>
-      <div class="stage-pill" style="background:${pillBg};color:${pillInk};margin-top:6px;">${escapeHtml(label)}</div>
-    </div>`;
+    return { site, s, status, cells, pct: applicable ? Math.round(done/applicable*100) : 0 };
   });
 
+  return { stages, rows };
+}
+
+function trackerDate(ts){
+  if(!ts) return '';
+  return new Date(ts).toLocaleDateString('en-IN', { day:'2-digit', month:'short' });
+}
+
+function renderDashboardView(){
+  const el = document.getElementById('dashboardView');
+  const { stages, rows } = buildTrackerMatrix();
+
+  const delayed = rows.filter(r => r.status.status === 'delayed').length;
+  const filterBtn = (key, label) => `<button type="button" class="switch-link" data-dash-filter="${key}" style="text-decoration:none;${dashboardPageFilter===key?'font-weight:800;text-decoration:underline;':''}">${label}</button>`;
+
+  let html = `<div class="admin-section">
+    <h3>Tracker</h3>
+    <div class="sub">Every project against every milestone — plan date versus actual, straight from the live stage data. Nothing here is typed in by hand: plan dates are the tracker's own projections and actuals are when each stage was genuinely marked complete, so this can't drift out of step with the board.</div>
+    <div class="tracker-toolbar">
+      ${filterBtn('all','All stages')} <span style="color:var(--sub);">·</span>
+      ${filterBtn('project-flow','Project Flow')} <span style="color:var(--sub);">·</span>
+      ${filterBtn('execution','Execution')}
+      <button class="btn ghost" id="downloadTrackerBtn" style="width:auto;font-size:12px;padding:7px 12px;margin-left:auto;">Download tracker (Excel)</button>
+    </div>
+    <div class="progress-line" style="margin-top:0;">${rows.length} project${rows.length===1?'':'s'} · ${stages.length} milestone${stages.length===1?'':'s'} shown${delayed ? ` · <span style="color:#8A2E2E;font-weight:700;">${delayed} delayed</span>` : ''}</div>
+  </div>`;
+
+  if(!rows.length){
+    html += `<div class="empty-note">No live projects to track yet.</div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  // Three header rows, same shape as the spreadsheet: owner, then the milestone, then
+  // the Plan/Actual pair underneath it.
+  html += `<div class="tracker-scroll"><table class="tracker">
+    <thead>
+      <tr>
+        <th class="col-proj" rowspan="3" style="vertical-align:middle;">Project</th>
+        <th rowspan="3" style="vertical-align:middle;">City</th>
+        <th rowspan="3" style="vertical-align:middle;">Format</th>
+        <th rowspan="3" style="vertical-align:middle;">Status</th>
+        <th rowspan="3" style="vertical-align:middle;">Done</th>
+        ${stages.map(st=>`<th colspan="2" style="font-weight:500;color:var(--sub);">${escapeHtml(st.owner||'—')}</th>`).join('')}
+      </tr>
+      <tr>
+        ${stages.map(st=>`<th colspan="2" title="${escapeHtml(st.desc||'')}">${st.num} · ${escapeHtml(st.title)}</th>`).join('')}
+      </tr>
+      <tr>
+        ${stages.map(()=>`<th style="font-weight:500;color:var(--sub);">Plan</th><th style="font-weight:500;color:var(--sub);">Actual</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>`;
+
+  rows.forEach(r=>{
+    html += `<tr>
+      <td class="col-proj" data-open-dash-project="${r.site.id}" style="cursor:pointer;font-weight:600;">${escapeHtml(r.site.name)}</td>
+      <td>${escapeHtml((board.cities.find(c=>c.code===r.site.city)||{}).name || r.site.city)}</td>
+      <td>${escapeHtml(FORMATS[r.site.format] ? FORMATS[r.site.format].label : (r.site.format||''))}</td>
+      <td><span class="stage-pill" style="background:${r.status.bg};color:${r.status.ink};font-size:10px;padding:3px 8px;">${escapeHtml(r.status.label)}</span></td>
+      <td>${r.pct}%</td>
+      ${r.cells.map(c=>{
+        if(c.state === 'skip') return `<td class="cell-skip" colspan="2">n/a</td>`;
+        if(c.state === 'none') return `<td colspan="2"></td>`;
+        return `<td class="cell-${c.state}">${trackerDate(c.plan) || '—'}</td><td class="cell-${c.state}">${trackerDate(c.actual) || '—'}</td>`;
+      }).join('')}
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>
+  <div class="tracker-legend">
+    <span><i style="background:var(--done-bg);"></i>Done on time</span>
+    <span><i style="background:#EFF4EF;"></i>Done (no plan date — runs before P&amp;L)</span>
+    <span><i style="background:#FDECD8;"></i>Done late</span>
+    <span><i style="background:var(--gate-bg);"></i>Overdue</span>
+    <span><i style="background:#F7EFD9;"></i>In progress</span>
+    <span><i style="background:#fff;"></i>Not started</span>
+    <span><i style="background:#F6F3EE;"></i>Not applicable to this format</span>
+  </div>`;
+
   el.innerHTML = html;
-  el.querySelectorAll('[data-open-dash-project]').forEach(row=>{
-    row.onclick = ()=>{
-      activeStore = row.dataset.openDashProject;
+
+  el.querySelectorAll('[data-dash-filter]').forEach(btn=>{
+    btn.onclick = ()=>{ dashboardPageFilter = btn.dataset.dashFilter; render(); };
+  });
+  el.querySelectorAll('[data-open-dash-project]').forEach(cell=>{
+    cell.onclick = ()=>{
+      activeStore = cell.dataset.openDashProject;
       currentView = 'tracker';
       trackerSubView = 'detail';
       render();
     };
   });
+  const downloadTrackerBtn = document.getElementById('downloadTrackerBtn');
+  if(downloadTrackerBtn) downloadTrackerBtn.onclick = withClickLoading(downloadTrackerBtn, 'Building…', async ()=>{
+    downloadTrackerWorkbook();
+  });
+}
+
+// Real .xlsx, built from the same matrix the grid just rendered — merged milestone
+// headers and a Plan/Actual pair under each, matching the sheet layout people already
+// work in, so it drops straight into an existing review deck.
+function downloadTrackerWorkbook(){
+  const { stages, rows } = buildTrackerMatrix();
+  const lead = ['Project','City','Format','Status','Done %'];
+  const fmtCell = ts => ts ? new Date(ts).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '';
+
+  const r1 = [...lead.map(()=> '')];
+  const r2 = [...lead];
+  const r3 = [...lead.map(()=> '')];
+  stages.forEach(st=>{
+    r1.push(st.owner || '', '');
+    r2.push(`${st.num} · ${st.title}`, '');
+    r3.push('Plan','Actual');
+  });
+  // Row 1 carries the owner/department band, row 2 the milestone, row 3 Plan/Actual —
+  // the lead columns are merged down all three so the left edge stays readable.
+  const aoa = [r1, r2, r3];
+  rows.forEach(r=>{
+    const line = [
+      r.site.name,
+      (board.cities.find(c=>c.code===r.site.city)||{}).name || r.site.city,
+      FORMATS[r.site.format] ? FORMATS[r.site.format].label : (r.site.format||''),
+      r.status.label,
+      r.pct + '%',
+    ];
+    r.cells.forEach(c=>{
+      if(c.state === 'skip'){ line.push('n/a','n/a'); return; }
+      line.push(fmtCell(c.plan), c.actual ? fmtCell(c.actual) : (c.state === 'overdue' ? 'OVERDUE' : ''));
+    });
+    aoa.push(line);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const merges = [];
+  lead.forEach((_,i)=> merges.push({ s:{r:0,c:i}, e:{r:2,c:i} }));
+  stages.forEach((_,i)=>{
+    const c = lead.length + i*2;
+    merges.push({ s:{r:0,c}, e:{r:0,c:c+1} });
+    merges.push({ s:{r:1,c}, e:{r:1,c:c+1} });
+  });
+  ws['!merges'] = merges;
+  ws['!cols'] = [{wch:26},{wch:12},{wch:14},{wch:12},{wch:8}, ...stages.flatMap(()=>[{wch:12},{wch:12}])];
+  ws['!freeze'] = { xSplit:5, ySplit:3 };
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'NSO Tracker');
+  const stamp = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `NSO_Tracker_${stamp}.xlsx`);
 }
 
 function renderSummary(){
@@ -2704,7 +4015,7 @@ function renderSummary(){
   const s = storeState(activeStore);
   const site = getSite(activeStore);
   const curStage = STAGES.find(x=>x.id===s.current);
-  const doneFinal = s.stageData[11].status === 'done';
+  const doneFinal = s.stageData[11] && s.stageData[11].status === 'done';
   const el = document.getElementById('storeSummary');
   let pillBg = 'var(--task-bg)', pillInk = 'var(--task-ink)', label = curStage ? `Stage ${curStage.num} — ${curStage.title}` : '';
   if(s.projectClosed){ pillBg='var(--done-bg)'; pillInk='var(--done)'; label='Project Closed'; }
@@ -2925,11 +4236,28 @@ function renderFlow(){
     <button type="button" id="viewModeHorizontal" class="switch-link" style="text-decoration:none;${stageViewMode==='horizontal'?'font-weight:800;text-decoration:underline;':''}">⬌ Timeline</button>
   </div>`;
 
-  // Filtered to whichever tab is active — Project Flow and Execution are one continuous
-  // sequence underneath (recompute/TAT/due-dates above already ran against the FULL
-  // STAGES array, unfiltered), this only decides which subset of that sequence actually
-  // renders as cards right now.
-  const stageMeta = STAGES.filter(st=>(st.page||'project-flow')===activePage).map(st=>{
+  // Section sub-tabs — a page with 40+ stages is unwieldy to scroll through in one go,
+  // so any stage carrying a `section` label gets grouped into a tappable sub-tab here.
+  // Purely a display filter, same principle as the page split above: recompute/TAT/due-
+  // dates already ran against the full STAGES array, this only narrows what's shown.
+  const pageStages = STAGES.filter(st=>(st.page||'project-flow')===activePage);
+  const sectionsInOrder = [...new Set(pageStages.map(st=>st.section).filter(Boolean))];
+  if(sectionsInOrder.length){
+    if(!activeSection || !sectionsInOrder.includes(activeSection)) activeSection = sectionsInOrder[0];
+    html += `<div class="store-tabs" style="padding-bottom:10px;">` + sectionsInOrder.map(sec=>{
+      const secStages = pageStages.filter(st=>st.section===sec);
+      const doneCount = secStages.filter(st=>{ const d=s.stageData[st.id]; return d && (d.status==='done'||d.status==='skip'); }).length;
+      return `<button class="store-tab ${sec===activeSection?'active':''}" data-section="${escapeHtml(sec)}">${escapeHtml(sec)} <span style="opacity:.7;">${doneCount}/${secStages.length}</span></button>`;
+    }).join('') + `</div>`;
+  } else {
+    activeSection = null; // this page has no sections defined — show everything, same as before
+  }
+
+  // Filtered to whichever tab (and, if this page uses them, section) is active —
+  // Project Flow and Execution are one continuous sequence underneath (recompute/TAT/
+  // due-dates above already ran against the FULL STAGES array, unfiltered), this only
+  // decides which subset of that sequence actually renders as cards right now.
+  const stageMeta = pageStages.filter(st=>!activeSection || st.section===activeSection).map(st=>{
     const d = s.stageData[st.id];
     if(d.status === 'skip') return { st, d, skip:true };
     const t = stageTiming(st, d, activeStore);
@@ -2938,7 +4266,7 @@ function renderFlow(){
     if((t && t.isOverdue) || notStartedButPastDue) dotCls = 'overdue';
     let dotContent = d.status==='done' ? '✓' : (d.status==='declined' ? '↩' : ((t && t.isOverdue) || notStartedButPastDue ? '!' : st.num));
     let statusLabel = {pending:'Pending', active:'In progress', done:'Complete', declined:'Sent back', awaiting_approval:'Awaiting approval'}[d.status];
-    const defaultTat = effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays);
+    const defaultTat = effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays, st.tatByFormat);
     let slaBit = `TAT ${fmtTatRange(defaultTat.min, defaultTat.max)}`;
     if(t) slaBit = t.isOverdue ? `Day ${t.elapsedDays} — ${t.overdueDays}d over TAT` : `Day ${t.elapsedDays} of ${fmtTatRange(t.tatMin, t.tatMax)} TAT`;
     else if(notStartedButPastDue) slaBit = `${Math.floor((Date.now()-d.dueDate)/86400000)}d overdue — not started yet`;
@@ -3042,6 +4370,9 @@ function renderFlow(){
   }
 
   el.innerHTML = html;
+  el.querySelectorAll('[data-section]').forEach(btn=>{
+    btn.onclick = ()=>{ activeSection = btn.dataset.section; render(); };
+  });
   el.querySelectorAll('.stage-row[data-stage], .stage-card[data-stage]').forEach(row=>{
     row.onclick = ()=> openSheet(parseInt(row.dataset.stage));
   });
@@ -3138,7 +4469,7 @@ function openSheet(stageId){
     <button id="stickyCloseBtn" class="sticky-close-x" aria-label="Close">✕</button>
     <span class="stage-badge ${st.type} sheet-badge">${st.type}</span>
     <h2>${st.num} · ${escapeHtml(st.title)}</h2>
-    <div class="meta">${escapeHtml(st.owner)} · ${fmtTatRange(effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays).min, effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays).max)} TAT</div>
+    <div class="meta">${escapeHtml(st.owner)} · ${fmtTatRange(effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays, st.tatByFormat).min, effectiveTat(activeStore, 'stage_'+st.id, st.tatMinDays, st.tatMaxDays, st.tatByFormat).max)} TAT</div>
     <div class="desc">${escapeHtml(st.desc)}${st.id===2 ? ` Preferred size for this site: <b>${FORMATS[site.format].sizeText}</b> (${FORMATS[site.format].label}).` : ''}</div>
   `;
   const myStakeholder = findMyStakeholder();
@@ -3990,14 +5321,15 @@ function renderAdmin(){
       <div class="field"><label>Site name</label><input id="admSiteName" placeholder="e.g. Bangalore — Site 5"></div>
       <div class="field"><label>City</label><select id="admSiteCity">${board.cities.map(c=>`<option value="${c.code}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
       <div class="field"><label>Format</label><select id="admSiteFormat">
-        <option value="Omni">Omni (Dine-in) — 1,200–1,300 sqft</option>
-        <option value="CloudKitchen">Cloud Kitchen — 650 sqft</option>
+        <option value="CK">CK & Kiosks</option>
+        <option value="F10">1.0 Format</option>
+        <option value="F20">2.0 Format</option>
       </select></div>
       <div class="btn-row"><button class="btn primary" id="admAddSite">Add site</button></div>
       ${board.sites.filter(s=>!s.deletedAt).map(site=>`
         <div class="admin-row">
           <div><div class="admin-row-main">${escapeHtml(site.name)}</div>
-            <div class="admin-row-sub">${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)} · ${FORMATS[site.format].label}</div></div>
+            <div class="admin-row-sub">${escapeHtml((board.cities.find(c=>c.code===site.city)||{}).name || site.city)} · ${FORMATS[site.format] ? FORMATS[site.format].label : site.format}</div></div>
           <button class="remove-x" data-del-site="${site.id}">✕</button>
         </div>`).join('')}
     </div>
@@ -4127,6 +5459,23 @@ function renderAdmin(){
       })()}
     </div>
 
+    <div class="admin-section">
+      <h3>Scouting Approvers</h3>
+      <div class="sub">Anyone on this list can Approve or Reject a scouting site once it's submitted — any one of them is enough. Only stakeholders tagged Approver above are eligible.</div>
+      ${(()=>{
+        const eligible = board.stakeholders.filter(p=>p.isApprover);
+        const current = board.scoutingApprovers || [];
+        const currentPeople = current.map(id=>board.stakeholders.find(p=>p.id===id)).filter(Boolean);
+        return `${currentPeople.length === 0 ? `<div class="admin-row-sub" style="padding:4px 0;">No approvers yet.</div>` : currentPeople.map(p=>`
+          <div class="admin-row"><div class="admin-row-main">${escapeHtml(p.name)}</div><button class="remove-x" data-remove-scouting-approver="${p.id}">✕</button></div>
+        `).join('')}
+        <select id="addScoutingApproverSelect" style="margin-top:6px;">
+          <option value="">— add an approver —</option>
+          ${eligible.filter(p=>!current.includes(p.id)).map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${levelLabel(p.level)})</option>`).join('')}
+        </select>`;
+      })()}
+    </div>
+
     <div class="admin-section" id="adminSlaSection">
       <details class="collapse-group" ${slaSectionOpen ? 'open' : ''}>
         <summary>TAT Settings <span style="font-weight:400;color:var(--sub);font-size:11px;">Admin only</span></summary>
@@ -4160,6 +5509,33 @@ function renderAdmin(){
           }).join('')}
           <div class="btn-row"><button class="btn primary" id="admSaveSla">Save TAT changes for this project</button></div>
         ` : `<div class="empty-note">Pick a project above to see and edit its TAT overrides.</div>`}
+      </details>
+    </div>
+
+    <div class="admin-section" id="adminRevertSection">
+      <details class="collapse-group" ${revertSectionOpen ? 'open' : ''}>
+        <summary>Revert a Completed Stage <span style="font-weight:400;color:var(--sub);font-size:11px;">Admin only</span></summary>
+        <div class="sub" style="margin-top:0;">If a stage was marked complete by mistake, send it back to in-progress here. Pick a project, then a completed stage.</div>
+        <div class="field"><label>Project</label>
+          <select id="revertProjectPicker">
+            <option value="">— select a project —</option>
+            ${board.sites.filter(s=>!s.deletedAt).map(s=>`<option value="${s.id}" ${revertStageSiteId===s.id?'selected':''}>${escapeHtml(s.name)}${s.status==='draft'?' (draft)':''}</option>`).join('')}
+          </select>
+        </div>
+        ${revertStageSiteId ? (()=>{
+          const rSite = board.sites.find(s=>s.id===revertStageSiteId);
+          const rS = board.siteData[revertStageSiteId];
+          if(!rSite || !rS) return `<div class="empty-note">Project not found.</div>`;
+          const doneStages = STAGES.filter(st=>rS.stageData[st.id] && rS.stageData[st.id].status === 'done');
+          if(!doneStages.length) return `<div class="empty-note">No completed stages on this project yet.</div>`;
+          return doneStages.map(st=>{
+            const d = rS.stageData[st.id];
+            return `<div class="admin-row">
+              <div class="admin-row-main" style="flex:1;">${st.num} · ${escapeHtml(st.title)}<div class="admin-row-sub">Completed by ${escapeHtml(d.updatedBy||'someone')} · ${fmtDate(d.updatedAt)}</div></div>
+              <button class="btn ghost" data-revert-stage="${st.id}" style="width:auto;font-size:12px;padding:8px 12px;white-space:nowrap;">Revert</button>
+            </div>`;
+          }).join('');
+        })() : `<div class="empty-note">Pick a project above to see its completed stages.</div>`}
       </details>
     </div>
 
@@ -4302,6 +5678,40 @@ function renderAdmin(){
       }
     });
     await saveBoard(); render();
+  });
+
+  const revertProjectPicker = document.getElementById('revertProjectPicker');
+  if(revertProjectPicker) revertProjectPicker.onchange = ()=>{
+    revertStageSiteId = revertProjectPicker.value || null;
+    revertSectionOpen = true;
+    render();
+  };
+  const revertDetailsEl = document.querySelector('#adminRevertSection details');
+  if(revertDetailsEl) revertDetailsEl.addEventListener('toggle', ()=>{ revertSectionOpen = revertDetailsEl.open; });
+  el.querySelectorAll('[data-revert-stage]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      const stageId = parseInt(btn.dataset.revertStage);
+      const rS = board.siteData[revertStageSiteId];
+      const st = STAGES.find(x=>x.id===stageId);
+      const d = rS && rS.stageData[stageId];
+      if(!rS || !d || !st) return;
+      if(!window.confirm(`Revert "${st.num} · ${st.title}" back to in progress? Its completion record stays in the log — this just reopens it.`)) return;
+      const who = getWho();
+      // Preserve who originally completed it — this is an admin correction, not erasing
+      // that history — just note who reverted it and when, same "extend, never erase"
+      // principle as everywhere else in the app.
+      const previouslyCompletedBy = d.updatedBy, previouslyCompletedAt = d.updatedAt;
+      d.status = 'active';
+      d.revertedFromDone = { previouslyCompletedBy, previouslyCompletedAt, revertedBy: who, revertedAt: Date.now() };
+      d.updatedBy = who; d.updatedAt = Date.now();
+      // Type 4 stages (ground work + approval) need their own gate reset too, or the
+      // approval panel would show as already-actionable despite the stage being reopened.
+      if(st.requiresApproval && st.requiresAssignment){ d.groundWorkCompleted = false; d.groundWorkCompletedBy = null; d.groundWorkCompletedAt = null; }
+      if(d.approvals) d.approvals = {};
+      rS.log.push({stageId, text:`Reverted to in-progress by ${who} (was marked complete by ${previouslyCompletedBy||'someone'})`, at: Date.now()});
+      recompute(revertStageSiteId);
+      await saveBoard(); render();
+    });
   });
 
   const markGmailTokenRefreshedBtn = document.getElementById('markGmailTokenRefreshedBtn');
@@ -4555,6 +5965,26 @@ function renderAdmin(){
       }catch(e){ window.alert(e.message || 'Could not remove that approver — try again.'); }
     });
   });
+
+  const addScoutingApproverSelect = document.getElementById('addScoutingApproverSelect');
+  if(addScoutingApproverSelect) addScoutingApproverSelect.onchange = async ()=>{
+    const personId = addScoutingApproverSelect.value;
+    if(!personId) return;
+    try{
+      const res = await addScoutingApproverFn({ personId });
+      if(res && res.data) board.scoutingApprovers = res.data.approvers;
+      render();
+    }catch(e){ window.alert(e.message || 'Could not add that approver — try again.'); render(); }
+  };
+  el.querySelectorAll('[data-remove-scouting-approver]').forEach(btn=>{
+    btn.onclick = withClickLoading(btn, 'Working…', async ()=>{
+      try{
+        const res = await removeScoutingApproverFn({ personId: btn.dataset.removeScoutingApprover });
+        if(res && res.data) board.scoutingApprovers = res.data.approvers;
+        render();
+      }catch(e){ window.alert(e.message || 'Could not remove that approver — try again.'); }
+    });
+  });
 }
 
 document.getElementById('navTracker').onclick = ()=>{ closeSheet(); currentView='tracker'; activePage='project-flow'; trackerSubView='list'; render(); };
@@ -4566,6 +5996,7 @@ document.getElementById('navExecution').onclick = ()=>{
 };
 document.getElementById('navDashboard').onclick = ()=>{ closeSheet(); currentView='dashboard'; render(); };
 document.getElementById('backToProjectListBtn').onclick = ()=>{ closeSheet(); trackerSubView='list'; render(); };
+document.getElementById('navScouting').onclick = ()=>{ closeSheet(); currentView='scouting'; render(); };
 document.getElementById('navMyTasks').onclick = ()=>{ closeSheet(); currentView='myTasks'; render(); };
 document.getElementById('navFiles').onclick = ()=>{ closeSheet(); currentView='files'; render(); };
 document.getElementById('navCapex').onclick = ()=>{ closeSheet(); currentView='capex'; render(); };
@@ -4875,14 +6306,26 @@ auth.onAuthStateChanged(async (user)=>{
 tryRedeemScopedLink();
 
 function handleLanding(){
-  if(pendingScopedLanding && board.siteData[pendingScopedLanding.siteId]){
-    activeStore = pendingScopedLanding.siteId;
-    currentView = 'tracker';
-    trackerSubView = 'detail';
-    render();
-    openSheet(pendingScopedLanding.stageId);
-    pendingScopedLanding = null;
-    return; // arrived via a scoped assignment link — don't interrupt with a tutorial either
+  if(pendingScopedLanding){
+    const landing = pendingScopedLanding;
+    pendingScopedLanding = null; // consumed either way — never let it misfire on a later render
+    const hasSite = landing.siteId && board.siteData[landing.siteId];
+    // A sign-in link doesn't always carry a stage. Digest links name a project but no
+    // single stage (a digest spans several), and daily-status links name neither — they
+    // just sign the person in. Opening a sheet unconditionally would break on both, so
+    // each part of the link is only acted on if it's actually there.
+    if(hasSite){
+      activeStore = landing.siteId;
+      currentView = 'tracker';
+      trackerSubView = 'detail';
+      render();
+      if(landing.stageId !== undefined && landing.stageId !== null && STAGES.find(st=>st.id===landing.stageId)){
+        openSheet(landing.stageId);
+      }
+      return; // arrived via a sign-in link — don't interrupt with a tutorial either
+    }
+    // Signed in fine, but the link carried no project (or one this person can't see) —
+    // fall through to the normal landing below rather than showing them nothing.
   }
   const urlParams = new URLSearchParams(window.location.search);
   const linkSite = urlParams.get('site');
