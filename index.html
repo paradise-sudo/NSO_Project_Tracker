@@ -116,6 +116,7 @@
   }
 
   #flow{padding:16px 14px 0;position:relative;}
+  .timeline-wrap{position:relative;margin-top:14px;}
   .rail-line{position:absolute;left:37px;top:16px;bottom:16px;width:2px;background:var(--line);z-index:0;}
 
   .delay-banner{
@@ -4320,7 +4321,7 @@ function renderFlow(){
       html += stageCardHtml(currentMeta);
     }
   } else {
-    html += '<div class="rail-line"></div>';
+    html += '<div class="timeline-wrap"><div class="rail-line"></div>';
     // Consecutive stages sharing the same parallelGroup render side-by-side in one row
     // instead of one after another, since they represent work genuinely happening at
     // the same time — not a strict sequence. A group only actually renders as parallel
@@ -4367,6 +4368,7 @@ function renderFlow(){
       }
       i++;
     }
+    html += '</div>';
   }
 
   el.innerHTML = html;
